@@ -1,0 +1,7 @@
+[gd_resource type="Resource" script_class="WorldMapConfig" format=3 uid="uid://b30v5r4l5mr07"]
+
+[ext_resource type="Script" uid="uid://vpwaeqihpfa" path="res://world/scripts/WorldMapConfig.cs" id="1_3lq0m"]
+
+[resource]
+script = ExtResource("1_3lq0m")
+MaxHeight = 400.0

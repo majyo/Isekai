@@ -1,0 +1,44 @@
+# Godot editor/import cache
+.godot/
+.import/
+
+# Godot export/build output
+/android/
+/build/
+/builds/
+/dist/
+/export/
+/exports/
+*.apk
+*.aab
+*.ipa
+*.pck
+
+# C#/.NET build artifacts
+bin/
+obj/
+.mono/
+*.user
+*.suo
+*.userprefs
+
+# Local IDE/editor state
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Generated world-map outputs; keep the folder itself.
+/world/generated/*
+!/world/generated/.gitkeep
+
+# Terrain3D example project assets are not used by this game.
+/demo/
