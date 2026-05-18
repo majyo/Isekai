@@ -31,6 +31,9 @@ public sealed partial class HexTileMap : Resource
     [Export] public int[] RegionId = [];
     [Export] public int[] OwnerId = [];
     [Export] public int[] ResourceId = [];
+    [Export] public int[] RiverKindByEdge = [];
+    [Export] public float[] RiverFlowByEdge = [];
+    [Export] public float[] RiverCrossingCostByEdge = [];
 
     private Dictionary<long, int> _lookupByAxial;
 
@@ -61,6 +64,9 @@ public sealed partial class HexTileMap : Resource
         RegionId = new int[tileCount];
         OwnerId = new int[tileCount];
         ResourceId = new int[tileCount];
+        RiverKindByEdge = new int[tileCount * WorldMapCoordinateUtility.AxialNeighborDirections.Length];
+        RiverFlowByEdge = new float[tileCount * WorldMapCoordinateUtility.AxialNeighborDirections.Length];
+        RiverCrossingCostByEdge = new float[tileCount * WorldMapCoordinateUtility.AxialNeighborDirections.Length];
         _lookupByAxial = null;
     }
 
@@ -98,12 +104,78 @@ public sealed partial class HexTileMap : Resource
             ProvinceId[index],
             RegionId[index],
             OwnerId[index],
-            ResourceId[index]);
+            ResourceId[index],
+            CountRiverEdgesForTile(index));
     }
 
     public int GetIndexUnchecked(int gridX, int gridY)
     {
         return gridY * GridSize.X + gridX;
+    }
+
+    public bool TryGetTileIndex(Vector2I axial, out int index)
+    {
+        EnsureLookup();
+        return _lookupByAxial.TryGetValue(GetAxialKey(axial.X, axial.Y), out index);
+    }
+
+    public HexRiverEdge GetRiverEdge(int tileIndex, int neighborDirection)
+    {
+        var edgeIndex = GetEdgeIndex(tileIndex, neighborDirection);
+        return new HexRiverEdge(
+            tileIndex,
+            neighborDirection,
+            (RiverKind)RiverKindByEdge[edgeIndex],
+            RiverFlowByEdge[edgeIndex],
+            RiverCrossingCostByEdge[edgeIndex]);
+    }
+
+    public void SetRiverEdge(int tileIndex, int neighborDirection, RiverKind riverKind, float flow, float crossingCostModifier)
+    {
+        var edgeIndex = GetEdgeIndex(tileIndex, neighborDirection);
+        RiverKindByEdge[edgeIndex] = (int)riverKind;
+        RiverFlowByEdge[edgeIndex] = flow;
+        RiverCrossingCostByEdge[edgeIndex] = crossingCostModifier;
+    }
+
+    public int CountRiverEdges(bool countSharedEdgesOnce)
+    {
+        var count = 0;
+
+        for (var tileIndex = 0; tileIndex < TileCount; tileIndex++)
+        {
+            for (var direction = 0; direction < WorldMapCoordinateUtility.AxialNeighborDirections.Length; direction++)
+            {
+                if (RiverKindByEdge[GetEdgeIndex(tileIndex, direction)] == (int)RiverKind.None)
+                {
+                    continue;
+                }
+
+                if (countSharedEdgesOnce)
+                {
+                    var neighborAxial = new Vector2I(Q[tileIndex], R[tileIndex]) + WorldMapCoordinateUtility.AxialNeighborDirections[direction];
+
+                    if (TryGetTileIndex(neighborAxial, out var neighborIndex) && neighborIndex < tileIndex)
+                    {
+                        continue;
+                    }
+                }
+
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    public static int GetOppositeDirection(int neighborDirection)
+    {
+        return (neighborDirection + 3) % WorldMapCoordinateUtility.AxialNeighborDirections.Length;
+    }
+
+    public static int GetEdgeIndex(int tileIndex, int neighborDirection)
+    {
+        return tileIndex * WorldMapCoordinateUtility.AxialNeighborDirections.Length + neighborDirection;
     }
 
     public static long GetAxialKey(int q, int r)
@@ -127,5 +199,20 @@ public sealed partial class HexTileMap : Resource
         {
             RebuildLookup();
         }
+    }
+
+    private int CountRiverEdgesForTile(int tileIndex)
+    {
+        var count = 0;
+
+        for (var direction = 0; direction < WorldMapCoordinateUtility.AxialNeighborDirections.Length; direction++)
+        {
+            if (RiverKindByEdge[GetEdgeIndex(tileIndex, direction)] != (int)RiverKind.None)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 }

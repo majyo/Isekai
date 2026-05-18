@@ -288,12 +288,12 @@ resource id
 
 任务：
 
-- [ ] 定义 `HexRiverEdge`。
-- [ ] 在 hex 边附近采样河流流量。
-- [ ] 将河流关联到相邻 tile 的边。
-- [ ] 分类无河流、小河、大河。
-- [ ] 添加跨河移动惩罚。
-- [ ] 添加河流 debug overlay 或控制台输出。
+- [x] 定义 `HexRiverEdge`。
+- [x] 在 hex 边附近采样河流流量。
+- [x] 将河流关联到相邻 tile 的边。
+- [x] 分类无河流、小河、大河。
+- [x] 添加跨河移动惩罚。
+- [x] 添加河流 debug overlay 或控制台输出。
 
 建议河流边字段：
 
@@ -307,8 +307,14 @@ crossing cost modifier
 
 交付物：
 
-- 挂载在相关 tile 上的河流边数据。
+- `HexRiverEdge` 数据模型：`res://world/scripts/HexRiverEdge.cs`。
+- `RiverKind` 枚举：`res://world/scripts/RiverKind.cs`。
+- `HexRiverEdgeBaker`：`res://world/scripts/HexRiverEdgeBaker.cs`。
+- `HexRiverEdgeDebugExporter`：`res://world/scripts/HexRiverEdgeDebugExporter.cs`。
+- 挂载在相关 tile 上的河流边数据，保存在 `res://world/generated/hex_tiles.res` 的 edge 数组中。
 - 可供移动系统读取的跨河消耗。
+- 河流边 debug 图：`res://world/generated/hex_river_edges_debug.png`。
+- 河流边烘焙报告：`res://world/generated/hex_river_edge_bake_report.txt`。
 
 验收标准：
 
@@ -327,14 +333,14 @@ crossing cost modifier
 
 任务：
 
-- [ ] 实现 `HexOverlayRenderer`。
-- [ ] 使用 line mesh 或 `MultiMeshInstance3D` 生成 tile 边框。
-- [ ] 为 hex 角点采样显示高度。
-- [ ] 添加少量垂直偏移，避免 z-fighting。
-- [ ] 添加 hover 高亮。
-- [ ] 添加选中高亮。
-- [ ] 添加按地形类型染色的 debug overlay。
-- [ ] 添加按 owner id 染色的政治 overlay。
+- [x] 实现 `HexOverlayRenderer`。
+- [x] 使用 line mesh 或 `MultiMeshInstance3D` 生成 tile 边框。
+- [x] 为 hex 角点采样显示高度。
+- [x] 添加少量垂直偏移，避免 z-fighting。
+- [x] 添加 hover 高亮。当前已实现高亮 mesh 接口，实际鼠标输入在阶段 7 接入。
+- [x] 添加选中高亮。当前已实现高亮 mesh 接口，实际鼠标输入在阶段 7 接入。
+- [x] 添加按地形类型染色的 debug overlay。
+- [x] 添加按 owner id 染色的政治 overlay。
 
 MVP 推荐做法：
 
@@ -344,14 +350,16 @@ MVP 推荐做法：
 
 交付物：
 
+- `HexOverlayRenderer`：`res://world/scripts/HexOverlayRenderer.cs`。
+- `HexMapMode` 枚举：`res://world/scripts/HexMapMode.cs`。
 - 可见六边形网格。
-- hover 与选中视觉效果。
+- hover 与选中视觉效果接口。
 - 地形 overlay 和政治 overlay。
 
 验收标准：
 
 - overlay 在原型地图范围内与地形对齐。
-- hover 和选中反馈响应及时。
+- hover 和选中反馈 mesh 可由输入系统即时切换。
 - 渲染层没有为每个 tile 创建一个 `Node3D`。
 - 切换地形/政治 overlay 不需要重新烘焙数据。
 
@@ -367,17 +375,18 @@ MVP 推荐做法：
 
 任务：
 
-- [ ] 实现 `WorldMapInputController`。
-- [ ] 从相机向世界发射 raycast。
-- [ ] 将命中的 world XZ 转换为 axial hex。
-- [ ] 查询对应的 `HexTile`。
-- [ ] 更新 hover 状态。
-- [ ] 点击时选中 tile。
-- [ ] 创建紧凑的 tile 信息面板。
-- [ ] 显示地形、biome、高度、坡度、水域、海岸、移动消耗、owner 和河流数量。
+- [x] 实现 `WorldMapInputController`。
+- [x] 从相机向世界发射 raycast。当前使用信息图高度采样求射线与地形的命中点，不依赖 Terrain3D/预览 mesh 物理碰撞。
+- [x] 将命中的 world XZ 转换为 axial hex。
+- [x] 查询对应的 `HexTile`。
+- [x] 更新 hover 状态。
+- [x] 点击时选中 tile。
+- [x] 创建紧凑的 tile 信息面板。
+- [x] 显示地形、biome、高度、坡度、水域、海岸、移动消耗、owner 和河流数量。
 
 交付物：
 
+- `WorldMapInputController`：`res://world/scripts/WorldMapInputController.cs`。
 - 运行时 hover。
 - 运行时点击选择。
 - tile 信息面板。
@@ -400,32 +409,34 @@ MVP 推荐做法：
 
 任务：
 
-- [ ] 添加一键或单命令完整 rebake 流程。
-- [ ] 重新生成地形信息图。
-- [ ] 重新烘焙 Terrain3D。
-- [ ] 重新烘焙 hex tile。
-- [ ] 重新烘焙河流边。
-- [ ] 刷新 overlay。
-- [ ] 检查视觉地形和逻辑 tile 对齐。
-- [ ] 记录已知限制。
-- [ ] 更新本文档的进度状态。
+- [x] 添加一键或单命令完整 rebake 流程。当前入口为 `WorldMapPrototype.RunFullRebakePipeline()`，运行场景默认也会执行完整 pipeline。
+- [x] 重新生成地形信息图。
+- [x] 重新烘焙 Terrain3D。当前仍使用 ArrayMesh 预览 fallback，真实 Terrain3D 写入后续接入。
+- [x] 重新烘焙 hex tile。
+- [x] 重新烘焙河流边。
+- [x] 刷新 overlay。
+- [x] 检查视觉地形和逻辑 tile 对齐。
+- [x] 记录已知限制。
+- [x] 更新本文档的进度状态。
 
 验证清单：
 
-- [ ] 相同 seed 生成相同世界。
-- [ ] Terrain3D 高度与信息图一致。
-- [ ] 六边形 overlay 与地形对齐。
-- [ ] 多个区域的 tile 分类合理。
-- [ ] 海岸识别可用。
-- [ ] 河流边数据出现在预期边界。
-- [ ] hover 和点击选择可用。
-- [ ] 政治 overlay 可以显示 owner id。
-- [ ] 没有玩法系统依赖 Terrain3D clipmap mesh 数据。
+- [x] 相同 seed 生成相同世界。
+- [x] Terrain3D 高度与信息图一致。当前验证对象为信息图派生的 ArrayMesh 预览地形。
+- [x] 六边形 overlay 与地形对齐。
+- [x] 多个区域的 tile 分类合理。
+- [x] 海岸识别可用。
+- [x] 河流边数据出现在预期边界。
+- [x] hover 和点击选择可用。
+- [x] 政治 overlay 可以显示 owner id。
+- [x] 没有玩法系统依赖 Terrain3D clipmap mesh 数据。
 
 交付物：
 
-- 端到端 MVP 场景。
+- 端到端 MVP 场景：`res://world/scenes/world_map.tscn`。
+- MVP 验证器：`res://world/scripts/WorldMapMvpValidator.cs`。
 - 可复现的 generated 数据。
+- MVP 验证报告：`res://world/generated/world_map_mvp_validation_report.txt`。
 - 已更新的已知限制记录。
 
 验收标准：
@@ -447,10 +458,10 @@ MVP 推荐做法：
 | 阶段 2：坐标系统 | [x] | 共用坐标转换工具 | Codex | 已实现 pointy-top axial hex、像素/UV/world 转换和启动验证报告 |
 | 阶段 3：Terrain3D 视觉地形 | [~] | 连续 3D 地形 | Codex | ArrayMesh 预览 fallback 和 free look 预览相机已完成；真实 Terrain3D 接入等待插件安装 |
 | 阶段 4：六边形 Tile 烘焙 | [x] | 烘焙后的 tile 数据 | Codex | 已生成 16,384 个 tile，包含高度统计、地形分类、海岸、移动消耗和占位 owner/region |
-| 阶段 5：河流边数据 | [ ] | hex edge 河流数据 |  |  |
-| 阶段 6：六边形 Overlay 渲染 | [ ] | 对齐地形的 hex overlay |  |  |
-| 阶段 7：输入与 Tile 信息面板 | [ ] | hover、选择、信息面板 |  |  |
-| 阶段 8：MVP 集成与验证 | [ ] | 端到端 MVP |  |  |
+| 阶段 5：河流边数据 | [x] | hex edge 河流数据 | Codex | 已生成 2,310 条共享河流边，包含小河/大河分类、跨河消耗和双向一致性检查 |
+| 阶段 6：六边形 Overlay 渲染 | [x] | 对齐地形的 hex overlay | Codex | 已渲染 16,384 个 tile 的边框、地形 overlay、政治 overlay，并预留 hover/selection 高亮接口 |
+| 阶段 7：输入与 Tile 信息面板 | [x] | hover、选择、信息面板 | Codex | 已接入信息图高度 raycast、hover/selection 高亮和 tile inspector |
+| 阶段 8：MVP 集成与验证 | [x] | 端到端 MVP | Codex | 完整 pipeline 和 MVP 验证报告已通过，当前报告结果为 PASS |
 
 ## 技术风险
 
@@ -462,6 +473,14 @@ MVP 推荐做法：
 | 河流贴边后视觉不自然 | 河流玩法与视觉河道不完全一致 | 分离玩法河流边和视觉河流渲染，后续再细化匹配 |
 | 生成地形缺乏战略可读性 | MVP 难以验证玩法地图价值 | 优先增加 debug 视图和生成参数调试 |
 | 数据格式频繁变化 | 迭代中反复返工 | MVP 期间把 generated 数据视为可丢弃、可重烘焙产物 |
+
+## MVP 已知限制
+
+- 真实 Terrain3D 数据写入路径尚未完成；当前视觉地形仍使用 `ArrayMesh` 预览 fallback。
+- `res://world/generated/` 下的资源和 debug 图是可重建产物，按 `.gitignore` 不提交到仓库。
+- 河流边玩法数据已完成，但还没有沿 hex edge 绘制独立河流视觉 mesh。
+- hover/selection 与 inspector 已完成，但 UI 仍是开发调试面板，不是最终游戏 HUD。
+- 省份、资源、移动、存档和真实 Terrain3D 烘焙是 MVP 后续里程碑。
 
 ## MVP 完成定义
 

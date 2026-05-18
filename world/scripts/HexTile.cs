@@ -22,7 +22,8 @@ public readonly struct HexTile
         int provinceId,
         int regionId,
         int ownerId,
-        int resourceId)
+        int resourceId,
+        int riverEdgeCount)
     {
         Index = index;
         Q = q;
@@ -42,6 +43,7 @@ public readonly struct HexTile
         RegionId = regionId;
         OwnerId = ownerId;
         ResourceId = resourceId;
+        RiverEdgeCount = riverEdgeCount;
     }
 
     public int Index { get; }
@@ -62,4 +64,5 @@ public readonly struct HexTile
     public int RegionId { get; }
     public int OwnerId { get; }
     public int ResourceId { get; }
+    public int RiverEdgeCount { get; }
 }
