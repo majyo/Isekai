@@ -134,9 +134,9 @@ MVP 当前使用 `ArrayMesh` 预览 fallback：
 res://world/scripts/Terrain3DBaker.cs
 ```
 
-### Free Look 相机
+### 卷轴俯视相机
 
-已实现地形预览相机：
+已实现大战略式地形预览相机：
 
 ```text
 res://world/scripts/FreeLookCameraController.cs
@@ -145,10 +145,8 @@ res://world/scripts/FreeLookCameraController.cs
 操作方式：
 
 ```text
-右键按住：转向
-WASD：移动
-Q/E：下降/上升
-Shift：加速
+WASD：上下左右平移视野
+鼠标滚轮：拉近 / 拉远
 ```
 
 ### Hex Tile 烘焙
