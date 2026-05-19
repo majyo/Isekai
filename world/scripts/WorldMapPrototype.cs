@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using Godot;
 
 namespace Isekai.World;
@@ -13,6 +16,7 @@ public sealed partial class WorldMapPrototype : Node3D
 	[Export] public bool BakeRiverEdgesOnReady { get; set; } = true;
 	[Export] public bool RenderHexOverlayOnReady { get; set; } = true;
 	[Export] public bool ValidateMvpPipelineOnReady { get; set; } = true;
+	[Export] public bool ExportTerrainQualityOnReady { get; set; } = true;
 	[Export] public string TerrainInfoMapPath { get; set; } = TerrainInfoMap.DefaultResourcePath;
 	[Export] public string HexTileMapPath { get; set; } = HexTileMap.DefaultResourcePath;
 	[Export] public string HexTileBakeReportPath { get; set; } = HexTileBaker.DefaultBakeReportPath;
@@ -20,6 +24,9 @@ public sealed partial class WorldMapPrototype : Node3D
 	[Export] public string HexRiverEdgeBakeReportPath { get; set; } = HexRiverEdgeBaker.DefaultBakeReportPath;
 	[Export] public string HexRiverEdgeDebugPath { get; set; } = HexRiverEdgeDebugExporter.DefaultDebugPath;
 	[Export] public string MvpValidationReportPath { get; set; } = WorldMapMvpValidator.DefaultReportPath;
+	[Export] public string TerrainQualityReportPath { get; set; } = TerrainGenerationQualityReporter.DefaultQualityReportPath;
+	[Export] public string TerrainMetricsJsonPath { get; set; } = TerrainGenerationQualityReporter.DefaultMetricsJsonPath;
+	[Export] public string HeightHistogramDebugPath { get; set; } = TerrainGenerationQualityReporter.DefaultHeightHistogramPath;
 	[Export] public string DebugOutputDirectory { get; set; } = TerrainInfoMapDebugExporter.DefaultOutputDirectory;
 	[Export] public NodePath TerrainRootPath { get; set; } = "terrain_root";
 	[Export] public NodePath HexOverlayRendererPath { get; set; } = "hex_overlay";
@@ -28,6 +35,8 @@ public sealed partial class WorldMapPrototype : Node3D
 	public WorldMapConfig Config { get; private set; }
 	public TerrainInfoMap TerrainInfoMap { get; private set; }
 	public HexTileMap HexTileMap { get; private set; }
+
+	private readonly Dictionary<string, double> _pipelineTimingsMs = new();
 
 	public override void _Ready()
 	{
@@ -47,40 +56,46 @@ public sealed partial class WorldMapPrototype : Node3D
 
 		WorldMapDebugLogger.LogSystem($"Loaded config from '{ConfigPath}'.");
 		WorldMapDebugLogger.LogGenerationStep("Phase 0 ready.", Config);
+		_pipelineTimingsMs.Clear();
 
 		if (ValidateCoordinatesOnReady)
 		{
-			ValidateCoordinateSystem();
+			RunTimedStage("coordinate_validation", ValidateCoordinateSystem);
 		}
 
 		if (GenerateTerrainInfoOnReady)
 		{
-			GenerateTerrainInfoMap();
+			RunTimedStage("terrain_info_generation", GenerateTerrainInfoMap);
 		}
 
 		if (BakeVisualTerrainOnReady && TerrainInfoMap != null)
 		{
-			BakeVisualTerrain();
+			RunTimedStage("visual_terrain_bake", BakeVisualTerrain);
 		}
 
 		if (BakeHexTilesOnReady && TerrainInfoMap != null)
 		{
-			BakeHexTiles();
+			RunTimedStage("hex_tile_bake", BakeHexTiles);
 		}
 
 		if (BakeRiverEdgesOnReady && TerrainInfoMap != null && HexTileMap != null)
 		{
-			BakeRiverEdges();
+			RunTimedStage("hex_river_edge_bake", BakeRiverEdges);
 		}
 
 		if (RenderHexOverlayOnReady && TerrainInfoMap != null && HexTileMap != null)
 		{
-			RenderHexOverlay();
+			RunTimedStage("hex_overlay_render", RenderHexOverlay);
+		}
+
+		if (ExportTerrainQualityOnReady && TerrainInfoMap != null)
+		{
+			RunTimedStage("terrain_quality_export", ExportTerrainGenerationQualityReport);
 		}
 
 		if (ValidateMvpPipelineOnReady && TerrainInfoMap != null && HexTileMap != null)
 		{
-			ValidateMvpPipeline();
+			RunTimedStage("mvp_validation", ValidateMvpPipeline);
 		}
 	}
 
@@ -92,13 +107,15 @@ public sealed partial class WorldMapPrototype : Node3D
 			return;
 		}
 
-		ValidateCoordinateSystem();
-		GenerateTerrainInfoMap();
-		BakeVisualTerrain();
-		BakeHexTiles();
-		BakeRiverEdges();
-		RenderHexOverlay();
-		ValidateMvpPipeline();
+		_pipelineTimingsMs.Clear();
+		RunTimedStage("coordinate_validation", ValidateCoordinateSystem);
+		RunTimedStage("terrain_info_generation", GenerateTerrainInfoMap);
+		RunTimedStage("visual_terrain_bake", BakeVisualTerrain);
+		RunTimedStage("hex_tile_bake", BakeHexTiles);
+		RunTimedStage("hex_river_edge_bake", BakeRiverEdges);
+		RunTimedStage("hex_overlay_render", RenderHexOverlay);
+		RunTimedStage("terrain_quality_export", ExportTerrainGenerationQualityReport);
+		RunTimedStage("mvp_validation", ValidateMvpPipeline);
 	}
 
 	private void ValidateCoordinateSystem()
@@ -211,6 +228,20 @@ public sealed partial class WorldMapPrototype : Node3D
 		InitializeInputController(renderer);
 	}
 
+	private void ExportTerrainGenerationQualityReport()
+	{
+		TerrainGenerationQualityReporter.Export(
+			TerrainInfoMap,
+			HexTileMap,
+			Config,
+			_pipelineTimingsMs,
+			TerrainQualityReportPath,
+			TerrainMetricsJsonPath,
+			HeightHistogramDebugPath);
+
+		WorldMapDebugLogger.LogSystem($"Exported terrain generation quality report to '{TerrainQualityReportPath}'.");
+	}
+
 	private void InitializeInputController(HexOverlayRenderer renderer)
 	{
 		var inputController = GetNodeOrNull<WorldMapInputController>(InputControllerPath);
@@ -239,6 +270,21 @@ public sealed partial class WorldMapPrototype : Node3D
 		else
 		{
 			WorldMapDebugLogger.Warn($"MVP validation failed. Report saved to '{MvpValidationReportPath}'.");
+		}
+	}
+
+	private void RunTimedStage(string stageName, Action action)
+	{
+		var stopwatch = Stopwatch.StartNew();
+
+		try
+		{
+			action();
+		}
+		finally
+		{
+			stopwatch.Stop();
+			_pipelineTimingsMs[stageName] = stopwatch.Elapsed.TotalMilliseconds;
 		}
 	}
 }

@@ -67,6 +67,11 @@ public static class WorldMapMvpValidator
         builder.AppendLine();
         builder.AppendLine(failedCount == 0 ? "Result: PASS" : $"Result: FAIL ({failedCount} failed)");
         builder.AppendLine();
+        builder.AppendLine("Generated quality artifacts:");
+        builder.AppendLine($"- Terrain quality report: {TerrainGenerationQualityReporter.DefaultQualityReportPath}");
+        builder.AppendLine($"- Terrain metrics json: {TerrainGenerationQualityReporter.DefaultMetricsJsonPath}");
+        builder.AppendLine($"- Height histogram debug image: {TerrainGenerationQualityReporter.DefaultHeightHistogramPath}");
+        builder.AppendLine();
         builder.AppendLine("Known limitations:");
         builder.AppendLine("- Terrain3D direct data writing is still pending; the MVP uses an ArrayMesh visual terrain preview.");
         builder.AppendLine("- Generated files under res://world/generated/ are rebakable and intentionally ignored by Git.");
