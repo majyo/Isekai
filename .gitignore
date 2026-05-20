@@ -40,5 +40,13 @@ desktop.ini
 /world/generated/*
 !/world/generated/.gitkeep
 
+# Generated Terrain3D outputs; keep the folder structure.
+/world/terrain/generated/*
+!/world/terrain/generated/.gitkeep
+!/world/terrain/generated/terrain3d_data/
+!/world/terrain/generated/terrain3d_data/.gitkeep
+!/world/terrain/generated/reports/
+!/world/terrain/generated/reports/.gitkeep
+
 # Terrain3D example project assets are not used by this game.
 /demo/

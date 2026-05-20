@@ -7,6 +7,10 @@ public sealed class Terrain3DBaker
     private const string TerrainPreviewNodeName = "terrain_preview_mesh";
     private const string WaterPreviewNodeName = "water_preview_plane";
     public const string DefaultBakeReportPath = "res://world/generated/visual_terrain_bake_report.txt";
+    public const string DefaultTerrainDirectory = "res://world/terrain";
+    public const string DefaultGeneratedTerrainDirectory = "res://world/terrain/generated";
+    public const string DefaultTerrain3DDataDirectory = "res://world/terrain/generated/terrain3d_data";
+    public const string DefaultTerrain3DReportsDirectory = "res://world/terrain/generated/reports";
 
     public bool IsTerrain3DPluginAvailable()
     {
@@ -174,6 +178,10 @@ public sealed class Terrain3DBaker
         file.StoreLine($"VisualTerrainGridSize: {config.VisualTerrainGridSize}");
         file.StoreLine($"SeaLevel: {config.SeaLevel}");
         file.StoreLine($"Terrain3DPluginAvailable: {pluginAvailable}");
+        file.StoreLine($"TerrainDirectory: {DefaultTerrainDirectory}");
+        file.StoreLine($"GeneratedTerrainDirectory: {DefaultGeneratedTerrainDirectory}");
+        file.StoreLine($"Terrain3DDataDirectory: {DefaultTerrain3DDataDirectory}");
+        file.StoreLine($"Terrain3DReportsDirectory: {DefaultTerrain3DReportsDirectory}");
         file.StoreLine(pluginAvailable
             ? "Mode: ArrayMesh preview fallback. Terrain3D direct write path is pending."
             : "Mode: ArrayMesh preview fallback. Terrain3D plugin is not installed.");

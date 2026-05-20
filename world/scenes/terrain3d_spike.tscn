@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://world/scripts/Terrain3DSpikeRunner.cs" id="1_terrain3d_spike"]
+
+[node name="terrain3d_spike" type="Node"]
+script = ExtResource("1_terrain3d_spike")

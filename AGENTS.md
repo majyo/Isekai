@@ -28,4 +28,10 @@
 - Run project: `godot --path .`
 - Headless import/check: `godot --headless --path . --quit`
 
-If the local Godot executable is not on `PATH`, locate it first or ask the user which installed Godot binary to use.
+## Godot Executable Search Paths
+
+- `D:\workspace\godot\Godot_v4.6.2-stable_mono_win64`
+- Editor/runtime executable: `D:\workspace\godot\Godot_v4.6.2-stable_mono_win64\Godot_v4.6.2-stable_mono_win64.exe`
+- Console/headless executable: `D:\workspace\godot\Godot_v4.6.2-stable_mono_win64\Godot_v4.6.2-stable_mono_win64_console.exe`
+
+If the local Godot executable is not on `PATH`, check the search paths above first or ask the user which installed Godot binary to use.
