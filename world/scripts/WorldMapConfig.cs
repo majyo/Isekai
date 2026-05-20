@@ -2,6 +2,12 @@ using Godot;
 
 namespace Isekai.World;
 
+public enum VisualTerrainMode
+{
+	ArrayMeshPreview = 0,
+	Terrain3D = 1
+}
+
 [GlobalClass]
 public sealed partial class WorldMapConfig : Resource
 {
@@ -12,6 +18,8 @@ public sealed partial class WorldMapConfig : Resource
 	[Export] public Vector2I InfoMapSize { get; set; } = new(1024, 1024);
 
 	[Export] public Vector2I TargetHexGridSize { get; set; } = new(128, 128);
+
+	[Export] public VisualTerrainMode VisualTerrainMode { get; set; } = VisualTerrainMode.ArrayMeshPreview;
 
 	[Export] public Vector2I VisualTerrainGridSize { get; set; } = new(193, 193);
 

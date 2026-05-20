@@ -10,7 +10,7 @@ public static class WorldMapMvpValidator
     public const string DefaultReportPath = "res://world/generated/world_map_mvp_validation_report.txt";
 
     private const float HeightTolerance = 0.0001f;
-    private const string TerrainPreviewNodeName = "terrain_preview_mesh";
+    private const string Terrain3DClassName = "Terrain3D";
 
     public static bool Validate(
         WorldMapConfig config,
@@ -32,7 +32,7 @@ public static class WorldMapMvpValidator
         AddCheck(checks, "Terrain classification has playable variety", ValidateTerrainVariety(tileMap, out var varietyDetail), varietyDetail);
         AddCheck(checks, "Coast detection produced coastal tiles", CountTiles(tileMap, static (map, index) => map.IsCoastal[index] != 0) > 0);
         AddCheck(checks, "River edge data is present and bidirectionally consistent", ValidateRiverEdges(tileMap, out var riverDetail), riverDetail);
-        AddCheck(checks, "Visual terrain preview exists", terrainRoot?.GetNodeOrNull<MeshInstance3D>(TerrainPreviewNodeName)?.Mesh != null);
+        AddCheck(checks, "Visual terrain exists for selected mode", ValidateVisualTerrain(config, terrainRoot, out var visualTerrainDetail), visualTerrainDetail);
         AddCheck(checks, "Hex overlay rendered all tiles", overlayRenderer != null && overlayRenderer.LastRenderedTileCount == tileMap.TileCount, overlayRenderer == null ? "overlay renderer missing" : $"rendered={overlayRenderer.LastRenderedTileCount}, expected={tileMap.TileCount}");
         AddCheck(checks, "Hex overlay has grid and map mode meshes", overlayRenderer != null && overlayRenderer.HasRenderedGrid && overlayRenderer.HasTerrainMapMode && overlayRenderer.HasPoliticalMapMode);
         AddCheck(checks, "Hover and selection highlight meshes exist", overlayRenderer != null && overlayRenderer.HasHighlightMeshes);
@@ -46,6 +46,7 @@ public static class WorldMapMvpValidator
         builder.AppendLine($"Seed: {config?.Seed}");
         builder.AppendLine($"InfoMapSize: {config?.InfoMapSize}");
         builder.AppendLine($"TargetHexGridSize: {config?.TargetHexGridSize}");
+        builder.AppendLine($"VisualTerrainMode: {config?.VisualTerrainMode}");
         builder.AppendLine($"HexRadius: {config?.HexRadius}");
         builder.AppendLine();
 
@@ -73,7 +74,9 @@ public static class WorldMapMvpValidator
         builder.AppendLine($"- Height histogram debug image: {TerrainGenerationQualityReporter.DefaultHeightHistogramPath}");
         builder.AppendLine();
         builder.AppendLine("Known limitations:");
-        builder.AppendLine("- Terrain3D direct data writing is still pending; the MVP uses an ArrayMesh visual terrain preview.");
+        builder.AppendLine(config?.VisualTerrainMode == VisualTerrainMode.Terrain3D
+            ? "- Terrain3D height writing is active; material/control/color map writing is still pending."
+            : "- ArrayMesh preview mode is selected; Terrain3D height writing is available through VisualTerrainMode.");
         builder.AppendLine("- Generated files under res://world/generated/ are rebakable and intentionally ignored by Git.");
         builder.AppendLine("- River edge gameplay data is baked, but visual river meshes are not yet drawn as edge geometry.");
         builder.AppendLine("- Province, resource, movement, and save/load systems are follow-up milestones.");
@@ -252,6 +255,38 @@ public static class WorldMapMvpValidator
 
         detail = $"shared_edges={sharedRiverEdges}, inconsistent_directed_edges={inconsistentEdges}";
         return sharedRiverEdges > 0 && inconsistentEdges == 0;
+    }
+
+    private static bool ValidateVisualTerrain(WorldMapConfig config, Node3D terrainRoot, out string detail)
+    {
+        if (terrainRoot == null)
+        {
+            detail = "terrain root missing";
+            return false;
+        }
+
+        if (config?.VisualTerrainMode == VisualTerrainMode.Terrain3D && ClassDB.ClassExists(Terrain3DClassName))
+        {
+            var terrainNode = terrainRoot.GetNodeOrNull<Node>(Terrain3DBaker.Terrain3DNodeName);
+
+            if (terrainNode == null || !terrainNode.IsClass(Terrain3DClassName))
+            {
+                detail = $"Terrain3D node '{Terrain3DBaker.Terrain3DNodeName}' missing";
+                return false;
+            }
+
+            var data = terrainNode.Call("get_data").AsGodotObject();
+            var regionCount = data?.Call("get_region_count").AsInt32() ?? 0;
+
+            detail = $"mode=Terrain3D, node={terrainNode.Name}, regions={regionCount}";
+            return regionCount > 0;
+        }
+
+        var previewMesh = terrainRoot.GetNodeOrNull<MeshInstance3D>(Terrain3DBaker.TerrainPreviewNodeName)?.Mesh;
+        detail = previewMesh == null
+            ? "ArrayMesh preview mesh missing"
+            : "mode=ArrayMeshPreview";
+        return previewMesh != null;
     }
 
     private static int CountTiles(HexTileMap tileMap, TilePredicate predicate)

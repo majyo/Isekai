@@ -30,10 +30,10 @@
 - [x] Terrain3D 插件已在 `project.godot` 中启用。
 - [x] `godot --headless --path . --quit` 可跑完整 MVP 流程。
 - [x] `Terrain3DBaker` 能检测到 Terrain3D 类存在。
-- [x] 当前视觉地形仍为 `ArrayMesh` preview fallback。
+- [x] 当前视觉地形配置已切到 `Terrain3D`，并保留 `ArrayMesh` preview fallback。
 - [x] MVP 验证器确认玩法数据不依赖 Terrain3D mesh。
-- [ ] Terrain3D 正式高度数据写入尚未实现。
-- [ ] Terrain3D 材质、控制图、颜色图写入尚未实现。
+- [~] Terrain3D 正式高度数据写入已接入，等待 Godot headless runtime 验证。
+- [~] Terrain3D 颜色图写入已接入，正式材质/control 资产仍未实现。
 
 ## 推荐开发顺序
 
@@ -110,12 +110,12 @@ res://world/terrain/generated/reports/
 
 | ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
-| T3D-0301 | [ ] | P0 | 增加视觉地形模式配置 | `WorldMapConfig.cs` | 支持 `ArrayMeshPreview` 和 `Terrain3D` 两种模式 |
-| T3D-0302 | [ ] | P0 | 在 `Terrain3DBaker` 中创建 Terrain3D 节点 | `Terrain3DBaker.cs` | `terrain_root` 下生成 Terrain3D 节点 |
-| T3D-0303 | [ ] | P0 | 将 `HeightMap` 转为 Terrain3D 高度数据 | `Terrain3DBaker.cs` | Terrain3D 地形高度与信息图一致 |
-| T3D-0304 | [ ] | P0 | 保留 ArrayMesh fallback 分支 | `Terrain3DBaker.cs` | Terrain3D 写入失败时可回退预览 |
-| T3D-0305 | [ ] | P1 | 记录高度误差样本 | `visual_terrain_bake_report.txt` | 中心、四角、随机样本误差可读 |
-| T3D-0306 | [ ] | P1 | 修正 Terrain3D 区域尺寸和世界坐标映射 | `Terrain3DBaker.cs` | 地形覆盖范围与 `WorldSize` 匹配 |
+| T3D-0301 | [x] | P0 | 增加视觉地形模式配置 | `WorldMapConfig.cs` | 支持 `ArrayMeshPreview` 和 `Terrain3D` 两种模式 |
+| T3D-0302 | [~] | P0 | 在 `Terrain3DBaker` 中创建 Terrain3D 节点 | `Terrain3DBaker.cs` | 代码已接入，待 Godot headless 验证 `terrain_root` 下生成 Terrain3D 节点 |
+| T3D-0303 | [~] | P0 | 将 `HeightMap` 转为 Terrain3D 高度数据 | `Terrain3DBaker.cs` | 代码已接入，待 runtime 抽样确认 Terrain3D 地形高度与信息图一致 |
+| T3D-0304 | [x] | P0 | 保留 ArrayMesh fallback 分支 | `Terrain3DBaker.cs` | Terrain3D 写入失败时可回退预览 |
+| T3D-0305 | [~] | P1 | 记录高度误差样本 | `visual_terrain_bake_report.txt` | 报告字段已实现，待 headless 生成报告 |
+| T3D-0306 | [~] | P1 | 修正 Terrain3D 区域尺寸和世界坐标映射 | `Terrain3DBaker.cs` | 映射已按 `vertex_spacing` 和 import position 接入，待 runtime 验证 |
 
 阶段完成标准：
 
@@ -129,11 +129,11 @@ res://world/terrain/generated/reports/
 
 | ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
-| T3D-0401 | [ ] | P1 | 设计 biome 到 Terrain3D 材质映射 | `Terrain3DBaker.cs` / 新资源 | 至少覆盖海岸、草地、森林、沙地、岩石 |
-| T3D-0402 | [ ] | P1 | 生成颜色图或控制图 | `Terrain3DBaker.cs` | 材质分布来自 `BiomeMap`、高度、坡度 |
-| T3D-0403 | [ ] | P1 | 加入坡度岩石/山地规则 | `Terrain3DBaker.cs` | 高坡区域更偏岩石材质 |
-| T3D-0404 | [ ] | P2 | 加入湿润/河岸视觉提示 | `Terrain3DBaker.cs` | 河流高流量附近可产生湿土或岸线过渡 |
-| T3D-0405 | [ ] | P2 | 输出材质分布报告 | `visual_terrain_bake_report.txt` | 每类材质覆盖比例可检查 |
+| T3D-0401 | [x] | P1 | 设计 biome 到 Terrain3D 材质映射 | `Terrain3DBaker.cs` / 新资源 | color map 至少覆盖海岸、草地、森林、沙地、岩石 |
+| T3D-0402 | [~] | P1 | 生成颜色图或控制图 | `Terrain3DBaker.cs` | `TYPE_COLOR` 写入已接入，待 Godot runtime 验证 |
+| T3D-0403 | [x] | P1 | 加入坡度岩石/山地规则 | `Terrain3DBaker.cs` | 高坡和高海拔区域会混入岩石色 |
+| T3D-0404 | [x] | P2 | 加入湿润/河岸视觉提示 | `Terrain3DBaker.cs` | `RiverFlowMap` 附近会混入湿润河岸色 |
+| T3D-0405 | [~] | P2 | 输出材质分布报告 | `visual_terrain_bake_report.txt` | 报告字段已实现，待 headless 生成报告 |
 
 阶段完成标准：
 
@@ -163,7 +163,7 @@ res://world/terrain/generated/reports/
 
 | ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
-| T3D-0601 | [ ] | P0 | 默认视觉模式切到 Terrain3D | `world_map_config.tres` / 配置 | 新项目运行默认生成 Terrain3D |
+| T3D-0601 | [~] | P0 | 默认视觉模式切到 Terrain3D | `world_map_config.tres` / 配置 | `world_map_config.tres` 已切换，待 Godot headless 验证后收口 |
 | T3D-0602 | [ ] | P0 | ArrayMesh 分支重命名为 debug preview | `Terrain3DBaker.cs` | 日志和报告不再把它当正式路径 |
 | T3D-0603 | [ ] | P1 | 更新旧文档中的 MVP 限制说明 | `Docs/` | 不再写“真实 Terrain3D 待接入”作为当前状态 |
 | T3D-0604 | [ ] | P1 | 新增一键重烘焙检查命令说明 | `AGENTS.md` / `Docs/` | 文档包含指定 Godot exe 的 headless 命令 |
@@ -213,5 +213,7 @@ res://world/terrain/generated/reports/
 ## 当前推荐下一步
 
 ```text
-1. T3D-0301 到 T3D-0306：把 HeightMap 接入正式 Terrain3D 烘焙。
+1. 恢复或确认 Godot 4.6.2 Mono 可执行文件路径。
+2. 补跑 Godot headless 验证 T3D-0302、T3D-0303、T3D-0305、T3D-0306、T3D-0402、T3D-0405。
+3. 验证通过后进入阶段 5：验证器高度一致性、碰撞和导航准备。
 ```
