@@ -16,6 +16,8 @@ public sealed partial class WorldMapInputController : Node
     [Export(PropertyHint.Range, "1,16,1")]
     public int RaycastRefineIterations { get; set; } = 8;
 
+    [Export] public Key ToggleHexOverlayKey { get; set; } = Key.G;
+
     private WorldMapConfig _config;
     private TerrainInfoMap _infoMap;
     private HexTileMap _tileMap;
@@ -54,6 +56,14 @@ public sealed partial class WorldMapInputController : Node
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (@event is InputEventKey { Pressed: true, Echo: false } keyEvent
+            && keyEvent.Keycode == ToggleHexOverlayKey)
+        {
+            _overlayRenderer?.ToggleHexOverlayVisible();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         if (_tileMap == null || _hoveredTileIndex < 0)
         {
             return;

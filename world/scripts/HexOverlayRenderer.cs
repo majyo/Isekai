@@ -25,6 +25,8 @@ public sealed partial class HexOverlayRenderer : Node3D
     [Export(PropertyHint.Range, "0,1,0.01")]
     public float HighlightAlpha { get; set; } = 0.72f;
 
+    [Export] public bool HexOverlayVisibleOnRender { get; set; } = true;
+
     private TerrainInfoMap _infoMap;
     private HexTileMap _tileMap;
     private WorldMapConfig _config;
@@ -34,12 +36,15 @@ public sealed partial class HexOverlayRenderer : Node3D
     private MeshInstance3D _politicalModeMeshInstance;
     private MeshInstance3D _hoverHighlightMeshInstance;
     private MeshInstance3D _selectionHighlightMeshInstance;
+    private HexMapMode _currentMapMode;
+    private bool _isHexOverlayVisible = true;
 
     public int LastRenderedTileCount { get; private set; }
     public bool HasRenderedGrid => _gridMeshInstance?.Mesh != null;
     public bool HasTerrainMapMode => _terrainModeMeshInstance?.Mesh != null;
     public bool HasPoliticalMapMode => _politicalModeMeshInstance?.Mesh != null;
     public bool HasHighlightMeshes => _hoverHighlightMeshInstance != null && _selectionHighlightMeshInstance != null;
+    public bool IsHexOverlayVisible => _isHexOverlayVisible;
 
     public void Render(TerrainInfoMap infoMap, HexTileMap tileMap, WorldMapConfig config)
     {
@@ -47,6 +52,8 @@ public sealed partial class HexOverlayRenderer : Node3D
         _tileMap = tileMap;
         _config = config;
         _mapModeRoot = GetNodeOrNull<Node3D>(MapModeOverlayPath);
+        _currentMapMode = InitialMapMode;
+        _isHexOverlayVisible = HexOverlayVisibleOnRender;
         LastRenderedTileCount = 0;
         _gridMeshInstance = null;
         _terrainModeMeshInstance = null;
@@ -77,6 +84,10 @@ public sealed partial class HexOverlayRenderer : Node3D
             _mapModeRoot.AddChild(_politicalModeMeshInstance);
             SetMapMode(InitialMapMode);
         }
+        else
+        {
+            ApplyHexOverlayVisibility();
+        }
 
         LastRenderedTileCount = tileMap.TileCount;
         WorldMapDebugLogger.LogSystem($"Rendered hex overlay for {tileMap.TileCount} tiles.");
@@ -84,14 +95,52 @@ public sealed partial class HexOverlayRenderer : Node3D
 
     public void SetMapMode(HexMapMode mapMode)
     {
+        _currentMapMode = mapMode;
+        ApplyHexOverlayVisibility();
+    }
+
+    public void SetHexOverlayVisible(bool visible)
+    {
+        if (_isHexOverlayVisible == visible)
+        {
+            return;
+        }
+
+        _isHexOverlayVisible = visible;
+        ApplyHexOverlayVisibility();
+        WorldMapDebugLogger.LogSystem($"Hex overlay {(visible ? "shown" : "hidden")}.");
+    }
+
+    public void ToggleHexOverlayVisible()
+    {
+        SetHexOverlayVisible(!_isHexOverlayVisible);
+    }
+
+    private void ApplyHexOverlayVisibility()
+    {
+        if (_gridMeshInstance != null)
+        {
+            _gridMeshInstance.Visible = _isHexOverlayVisible;
+        }
+
         if (_terrainModeMeshInstance != null)
         {
-            _terrainModeMeshInstance.Visible = mapMode == HexMapMode.Terrain;
+            _terrainModeMeshInstance.Visible = _isHexOverlayVisible && _currentMapMode == HexMapMode.Terrain;
         }
 
         if (_politicalModeMeshInstance != null)
         {
-            _politicalModeMeshInstance.Visible = mapMode == HexMapMode.Political;
+            _politicalModeMeshInstance.Visible = _isHexOverlayVisible && _currentMapMode == HexMapMode.Political;
+        }
+
+        if (_hoverHighlightMeshInstance != null)
+        {
+            _hoverHighlightMeshInstance.Visible = _isHexOverlayVisible && _hoverHighlightMeshInstance.Mesh != null;
+        }
+
+        if (_selectionHighlightMeshInstance != null)
+        {
+            _selectionHighlightMeshInstance.Visible = _isHexOverlayVisible && _selectionHighlightMeshInstance.Mesh != null;
         }
     }
 
@@ -191,6 +240,7 @@ public sealed partial class HexOverlayRenderer : Node3D
         {
             if (meshInstance != null)
             {
+                meshInstance.Mesh = null;
                 meshInstance.Visible = false;
             }
 
@@ -213,7 +263,7 @@ public sealed partial class HexOverlayRenderer : Node3D
         surfaceTool.GenerateNormals();
         meshInstance.Mesh = surfaceTool.Commit();
         meshInstance.MaterialOverride = BuildHighlightMaterial(color);
-        meshInstance.Visible = true;
+        meshInstance.Visible = _isHexOverlayVisible;
     }
 
     private Vector3 GetTileCenterPosition(int tileIndex, float heightOffset)

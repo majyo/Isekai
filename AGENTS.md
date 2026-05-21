@@ -27,6 +27,7 @@
 - Open in editor: `godot --editor --path .`
 - Run project: `godot --path .`
 - Headless import/check: `godot --headless --path . --quit`
+- Terrain3D rebake/check: `& 'D:\workspace\godot\Godot_v4.6.2-stable_mono_win64\Godot_v4.6.2-stable_mono_win64_console.exe' --headless --path . --quit`
 
 ## Godot Executable Search Paths
 

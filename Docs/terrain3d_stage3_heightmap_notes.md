@@ -4,7 +4,7 @@
 
 ## 目标
 
-把正式 `TerrainInfoMap.HeightMap` 接入 `Terrain3DData.import_images(...)`，让主世界视觉地形可以从 ArrayMesh preview 切到 Terrain3D，同时保留 ArrayMesh 作为回退路径。
+把正式 `TerrainInfoMap.HeightMap` 接入 `Terrain3DData.import_images(...)`，让主世界视觉地形切到 Terrain3D，同时保留 ArrayMesh debug preview 作为故障定位路径。
 
 ## 本次实现
 
@@ -20,8 +20,8 @@
   - 调用 `update_maps(...)` 和 `calc_height_range(true)`。
   - 保存到 `res://world/terrain/generated/terrain3d_data/`。
   - 在 `visual_terrain_bake_report.txt` 中记录模式、数据目录、region 数量、保存文件数量和高度抽样误差。
-- Terrain3D 写入失败时会清空半成品节点并回退到 `terrain_preview_mesh`。
-- `WorldMapMvpValidator` 现在会根据 `VisualTerrainMode` 检查 Terrain3D 节点或 ArrayMesh preview。
+- Terrain3D 写入失败时会清空半成品节点，并创建 `terrain_preview_mesh` 作为 ArrayMesh debug preview。
+- `WorldMapMvpValidator` 现在会根据 `VisualTerrainMode` 检查 Terrain3D 节点或 ArrayMesh debug preview。
 
 ## 坐标和高度映射
 
@@ -48,20 +48,18 @@ min(WorldSize.X / InfoMapSize.X, WorldSize.Y / InfoMapSize.Y)
 dotnet build Isekai.csproj
 ```
 
-未完成：
+已补跑：
 
 ```powershell
 & 'D:\workspace\godot\Godot_v4.6.2-stable_mono_win64\Godot_v4.6.2-stable_mono_win64_console.exe' --headless --path . --quit
 ```
 
-本次环境中 `D:\workspace\godot\...` 不存在，`godot` 也不在 `PATH`，所以 Terrain3D runtime 导入和报告生成还需要在可用 Godot 4.6.2 Mono 环境中补跑。
+结果：
 
-## 后续
+- `EffectiveVisualTerrainMode: Terrain3D`
+- `RegionCount: 16`
+- `SavedFileCount: 16`
+- `MaxHeightSampleError: 0.579`
+- `world_map_mvp_validation_report.txt` PASS
 
-1. 恢复或确认 Godot 4.6.2 Mono 可执行文件路径。
-2. 跑完整 headless 主流程。
-3. 检查 `visual_terrain_bake_report.txt`：
-   - `EffectiveVisualTerrainMode` 应为 `Terrain3D`。
-   - `RegionCount` 应大于 `0`。
-   - `MaxHeightSampleError` 应低于容忍值。
-4. 检查 `world_map_mvp_validation_report.txt` 是否 PASS。
+阶段 3 的 Terrain3D 高度写入、区域坐标映射和抽样误差报告已通过 Godot runtime 验证。

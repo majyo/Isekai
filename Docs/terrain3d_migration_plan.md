@@ -2,7 +2,7 @@
 
 ## 目标
 
-将当前 `ArrayMesh` 视觉地形预览迁移为正式 `Terrain3D` 视觉地形，同时保留 `ArrayMesh` 作为调试和回退路径。
+将当前 `ArrayMesh` 视觉地形预览迁移为正式 `Terrain3D` 视觉地形，同时保留 `ArrayMesh` 作为 debug preview 和故障定位路径。
 
 迁移后的原则：
 
@@ -30,18 +30,18 @@
 - [x] Terrain3D 插件已在 `project.godot` 中启用。
 - [x] `godot --headless --path . --quit` 可跑完整 MVP 流程。
 - [x] `Terrain3DBaker` 能检测到 Terrain3D 类存在。
-- [x] 当前视觉地形配置已切到 `Terrain3D`，并保留 `ArrayMesh` preview fallback。
+- [x] 当前视觉地形配置已切到 `Terrain3D`，并保留 `ArrayMesh` debug preview。
 - [x] MVP 验证器确认玩法数据不依赖 Terrain3D mesh。
-- [~] Terrain3D 正式高度数据写入已接入，等待 Godot headless runtime 验证。
-- [~] Terrain3D 颜色图写入已接入，正式材质/control 资产仍未实现。
+- [x] Terrain3D 正式高度数据写入已通过 Godot headless runtime 验证。
+- [x] Terrain3D 颜色图、control map 和生成式 texture 资产已通过 Godot headless runtime 验证。
 
 ## 推荐开发顺序
 
 ```text
-阶段 0 -> 阶段 1 -> 阶段 2 -> 阶段 3 -> 阶段 4 -> 阶段 5 -> 阶段 6
+阶段 0 -> 阶段 1 -> 阶段 2 -> 阶段 3 -> 阶段 4 -> 阶段 5 -> 阶段 6 -> 阶段 7
 ```
 
-阶段 0 和 1 先降低版本/API 风险；阶段 2 到 4 建立真实 Terrain3D 数据路径；阶段 5 到 6 再处理碰撞、验证和清理。
+阶段 0 和 1 先降低版本/API 风险；阶段 2 到 4 建立真实 Terrain3D 数据路径；阶段 5 到 6 处理碰撞、验证和清理；阶段 7 开始补正式材质表现。
 
 ## 阶段 0：版本和环境锁定
 
@@ -59,7 +59,7 @@
 
 - Godot 4.6.2 Mono 可以加载项目和 Terrain3D。
 - 插件版本、升级方式和回退方式有记录。
-- 当前 ArrayMesh fallback 仍可工作。
+- 当前 ArrayMesh debug preview 仍可工作。
 
 ## 阶段 1：Terrain3D 最小写入 Spike
 
@@ -111,15 +111,15 @@ res://world/terrain/generated/reports/
 | ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
 | T3D-0301 | [x] | P0 | 增加视觉地形模式配置 | `WorldMapConfig.cs` | 支持 `ArrayMeshPreview` 和 `Terrain3D` 两种模式 |
-| T3D-0302 | [~] | P0 | 在 `Terrain3DBaker` 中创建 Terrain3D 节点 | `Terrain3DBaker.cs` | 代码已接入，待 Godot headless 验证 `terrain_root` 下生成 Terrain3D 节点 |
-| T3D-0303 | [~] | P0 | 将 `HeightMap` 转为 Terrain3D 高度数据 | `Terrain3DBaker.cs` | 代码已接入，待 runtime 抽样确认 Terrain3D 地形高度与信息图一致 |
-| T3D-0304 | [x] | P0 | 保留 ArrayMesh fallback 分支 | `Terrain3DBaker.cs` | Terrain3D 写入失败时可回退预览 |
-| T3D-0305 | [~] | P1 | 记录高度误差样本 | `visual_terrain_bake_report.txt` | 报告字段已实现，待 headless 生成报告 |
-| T3D-0306 | [~] | P1 | 修正 Terrain3D 区域尺寸和世界坐标映射 | `Terrain3DBaker.cs` | 映射已按 `vertex_spacing` 和 import position 接入，待 runtime 验证 |
+| T3D-0302 | [x] | P0 | 在 `Terrain3DBaker` 中创建 Terrain3D 节点 | `Terrain3DBaker.cs` | Godot headless 验证 `terrain_root` 下生成 Terrain3D 节点 |
+| T3D-0303 | [x] | P0 | 将 `HeightMap` 转为 Terrain3D 高度数据 | `Terrain3DBaker.cs` | runtime 抽样确认 Terrain3D 地形高度与信息图一致 |
+| T3D-0304 | [x] | P0 | 保留 ArrayMesh debug preview 分支 | `Terrain3DBaker.cs` | Terrain3D 写入失败时可创建调试预览 |
+| T3D-0305 | [x] | P1 | 记录高度误差样本 | `visual_terrain_bake_report.txt` | 报告记录 7 个抽样点和最大误差 |
+| T3D-0306 | [x] | P1 | 修正 Terrain3D 区域尺寸和世界坐标映射 | `Terrain3DBaker.cs` | 映射按 `vertex_spacing` 和 import position 接入并通过 runtime 验证 |
 
 阶段完成标准：
 
-- `world_map.tscn` 中看到的是 Terrain3D 地形，而不是只看到 ArrayMesh fallback。
+- `world_map.tscn` 中看到的是 Terrain3D 地形，而不是只看到 ArrayMesh debug preview。
 - overlay 的高度仍与视觉地形基本贴合。
 - 同 seed 重跑结果稳定。
 
@@ -130,10 +130,10 @@ res://world/terrain/generated/reports/
 | ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
 | T3D-0401 | [x] | P1 | 设计 biome 到 Terrain3D 材质映射 | `Terrain3DBaker.cs` / 新资源 | color map 至少覆盖海岸、草地、森林、沙地、岩石 |
-| T3D-0402 | [~] | P1 | 生成颜色图或控制图 | `Terrain3DBaker.cs` | `TYPE_COLOR` 写入已接入，待 Godot runtime 验证 |
+| T3D-0402 | [x] | P1 | 生成颜色图或控制图 | `Terrain3DBaker.cs` | `TYPE_COLOR` 写入已通过 Godot runtime 验证 |
 | T3D-0403 | [x] | P1 | 加入坡度岩石/山地规则 | `Terrain3DBaker.cs` | 高坡和高海拔区域会混入岩石色 |
 | T3D-0404 | [x] | P2 | 加入湿润/河岸视觉提示 | `Terrain3DBaker.cs` | `RiverFlowMap` 附近会混入湿润河岸色 |
-| T3D-0405 | [~] | P2 | 输出材质分布报告 | `visual_terrain_bake_report.txt` | 报告字段已实现，待 headless 生成报告 |
+| T3D-0405 | [x] | P2 | 输出材质分布报告 | `visual_terrain_bake_report.txt` | 报告输出 `ColorLayerCoverage` |
 
 阶段完成标准：
 
@@ -146,15 +146,15 @@ res://world/terrain/generated/reports/
 
 | ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
-| T3D-0501 | [ ] | P0 | MVP 验证器区分 Terrain3D 和 fallback | `WorldMapMvpValidator.cs` | 报告显示当前视觉地形模式 |
-| T3D-0502 | [ ] | P0 | 增加 Terrain3D 节点存在性检查 | `WorldMapMvpValidator.cs` | Terrain3D 模式下检查真实节点和数据 |
-| T3D-0503 | [ ] | P1 | 增加高度一致性验证 | `WorldMapMvpValidator.cs` | 抽样高度误差低于阈值 |
-| T3D-0504 | [ ] | P1 | 评估碰撞启用方式 | `Terrain3DBaker.cs` / 文档 | 明确是否用 Terrain3D collision 或独立采样 |
-| T3D-0505 | [ ] | P2 | 评估导航烘焙方式 | 文档 / 工具脚本 | 明确大地图是否需要 Terrain3D navmesh |
+| T3D-0501 | [x] | P0 | MVP 验证器区分 Terrain3D 和 debug preview | `WorldMapMvpValidator.cs` | 报告显示 requested/detected 视觉地形模式 |
+| T3D-0502 | [x] | P0 | 增加 Terrain3D 节点存在性检查 | `WorldMapMvpValidator.cs` | Terrain3D 模式下检查真实节点、data 和 region |
+| T3D-0503 | [x] | P1 | 增加高度一致性验证 | `WorldMapMvpValidator.cs` | 抽样高度误差低于阈值 |
+| T3D-0504 | [x] | P1 | 评估碰撞启用方式 | `Docs/terrain3d_stage5_validation_notes.md` | 当前大地图继续用 TerrainInfoMap 独立采样 |
+| T3D-0505 | [x] | P2 | 评估导航烘焙方式 | `Docs/terrain3d_stage5_validation_notes.md` | 当前大地图暂不生成全局 Terrain3D navmesh |
 
 阶段完成标准：
 
-- 自动报告能告诉我们当前到底跑的是 Terrain3D 还是 fallback。
+- 自动报告能告诉我们当前到底跑的是 Terrain3D 还是 debug preview。
 - 高度一致性不再只靠肉眼看。
 
 ## 阶段 6：切换默认路径和清理技术债
@@ -163,17 +163,35 @@ res://world/terrain/generated/reports/
 
 | ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
 | --- | --- | --- | --- | --- | --- |
-| T3D-0601 | [~] | P0 | 默认视觉模式切到 Terrain3D | `world_map_config.tres` / 配置 | `world_map_config.tres` 已切换，待 Godot headless 验证后收口 |
-| T3D-0602 | [ ] | P0 | ArrayMesh 分支重命名为 debug preview | `Terrain3DBaker.cs` | 日志和报告不再把它当正式路径 |
-| T3D-0603 | [ ] | P1 | 更新旧文档中的 MVP 限制说明 | `Docs/` | 不再写“真实 Terrain3D 待接入”作为当前状态 |
-| T3D-0604 | [ ] | P1 | 新增一键重烘焙检查命令说明 | `AGENTS.md` / `Docs/` | 文档包含指定 Godot exe 的 headless 命令 |
-| T3D-0605 | [ ] | P2 | 清理无用生成产物或旧报告字段 | `world/generated/` / 脚本 | 不影响可重建数据 |
+| T3D-0601 | [x] | P0 | 默认视觉模式切到 Terrain3D | `world_map_config.tres` / 配置 | `world_map_config.tres` 已切换并通过 Godot headless 验证 |
+| T3D-0602 | [x] | P0 | ArrayMesh 分支重命名为 debug preview | `Terrain3DBaker.cs` | 日志和报告不再把它当正式路径 |
+| T3D-0603 | [x] | P1 | 更新旧文档中的 MVP 限制说明 | `Docs/` | 当前 Terrain3D 阶段文档不再写“真实 Terrain3D 待接入”作为当前状态 |
+| T3D-0604 | [x] | P1 | 新增一键重烘焙检查命令说明 | `AGENTS.md` / `Docs/` | 文档包含指定 Godot exe 的 headless 命令 |
+| T3D-0605 | [x] | P2 | 清理无用生成产物或旧报告字段 | `world/generated/` / 脚本 | 报告字段改为 debug preview 语义，生成产物仍可重建 |
 
 阶段完成标准：
 
 - Terrain3D 是默认视觉地形路径。
-- ArrayMesh 仍可用于故障定位和快速对照。
+- ArrayMesh debug preview 仍可用于故障定位和快速对照。
 - 文档、报告、验证器三者状态一致。
+
+## 阶段 7：Texture/Control 材质层
+
+目标：让 Terrain3D 不再只依赖纯色 colormap，而是每个地貌 layer 都有基础纹理细节。
+
+| ID | 状态 | 优先级 | 任务 | 文件/位置 | 验收标准 |
+| --- | --- | --- | --- | --- | --- |
+| T3D-0701 | [x] | P0 | 为每个 Terrain color layer 生成可重复纹理 | `Terrain3DBaker.cs` / `world/terrain/generated/textures/` | 烘焙输出 10 张 layer albedo PNG |
+| T3D-0702 | [x] | P0 | 写入 Terrain3D `TYPE_CONTROL` 图 | `Terrain3DBaker.cs` | control map 与 color layer 分类一致 |
+| T3D-0703 | [x] | P0 | 配置 `Terrain3DAssets` texture slots | `Terrain3DBaker.cs` | 报告显示 `TextureAssetsConfigured: True` 和 `TextureAssetCount: 10` |
+| T3D-0704 | [x] | P1 | 保留 colormap 作为地貌 tint | `Terrain3DBaker.cs` | `show_colormap` 和 `enable_texturing` 同时启用 |
+| T3D-0705 | [x] | P1 | 更新验证报告中的旧限制说明 | `WorldMapMvpValidator.cs` | MVP 报告不再写 texture/control pending |
+
+阶段完成标准：
+
+- Terrain3D bake report 记录 `ControlImageSize`、texture 目录和 texture slot 列表。
+- Godot headless 回归 PASS。
+- 生成纹理仍写入 `world/terrain/generated/`，可重烘焙，不进入手写资源区。
 
 ## 每阶段回归命令
 
@@ -196,7 +214,7 @@ res://world/terrain/generated/reports/
 [ ] MVP validation PASS 或失败项有明确说明。
 [ ] `visual_terrain_bake_report.txt` 记录当前视觉地形模式。
 [ ] `TerrainInfoMap`、hex tile、overlay、输入命中仍不依赖 Terrain3D 可见 mesh。
-[ ] ArrayMesh fallback 没有被移除。
+[ ] ArrayMesh debug preview 没有被移除。
 [ ] 没有手动编辑 `.godot/` 缓存。
 ```
 
@@ -206,14 +224,14 @@ res://world/terrain/generated/reports/
 | --- | --- | --- |
 | Terrain3D C# API 暴露不完整 | 高度写入卡住 | 使用最小 GDScript 桥接层，但主流程仍由 C# 调用 |
 | Terrain3D region 尺寸和世界坐标不一致 | overlay 和视觉地形错位 | 阶段 3 增加坐标样本报告和高度误差报告 |
-| 插件升级破坏现有项目 | 项目无法打开或 headless 失败 | 阶段 0 记录版本和回退步骤，保留 ArrayMesh fallback |
+| 插件升级破坏现有项目 | 项目无法打开或 headless 失败 | 阶段 0 记录版本和回退步骤，保留 ArrayMesh debug preview |
 | 生成数据污染手写资源 | 难以回滚和复现 | 统一写入 `world/terrain/generated/` |
 | 视觉层反向影响玩法层 | 战略数据不稳定 | 验证器持续检查玩法数据只采样 `TerrainInfoMap` |
 
 ## 当前推荐下一步
 
 ```text
-1. 恢复或确认 Godot 4.6.2 Mono 可执行文件路径。
-2. 补跑 Godot headless 验证 T3D-0302、T3D-0303、T3D-0305、T3D-0306、T3D-0402、T3D-0405。
-3. 验证通过后进入阶段 5：验证器高度一致性、碰撞和导航准备。
+1. 从 Terrain3D 正式视觉地形继续推进河流可视化或局部导航。
+2. 每次改动后使用 AGENTS.md 中的 Terrain3D rebake/check 命令回归。
+3. 若 Terrain3D 写入失败，使用 ArrayMesh debug preview 定位高度和坐标问题。
 ```

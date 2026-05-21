@@ -10,7 +10,9 @@ public static class WorldMapMvpValidator
     public const string DefaultReportPath = "res://world/generated/world_map_mvp_validation_report.txt";
 
     private const float HeightTolerance = 0.0001f;
+    private const float Terrain3DHeightTolerance = 8.0f;
     private const string Terrain3DClassName = "Terrain3D";
+    private const int ExpectedTerrain3DTextureCount = 10;
 
     public static bool Validate(
         WorldMapConfig config,
@@ -22,6 +24,7 @@ public static class WorldMapMvpValidator
         out string report)
     {
         var checks = new List<ValidationCheck>();
+        var visualTerrain = InspectVisualTerrain(config, terrainRoot);
 
         AddCheck(checks, "Config is valid", config != null && config.IsValid(out _));
         AddCheck(checks, "Coordinate round trips pass", WorldMapCoordinateValidator.Validate(config, out _));
@@ -32,7 +35,9 @@ public static class WorldMapMvpValidator
         AddCheck(checks, "Terrain classification has playable variety", ValidateTerrainVariety(tileMap, out var varietyDetail), varietyDetail);
         AddCheck(checks, "Coast detection produced coastal tiles", CountTiles(tileMap, static (map, index) => map.IsCoastal[index] != 0) > 0);
         AddCheck(checks, "River edge data is present and bidirectionally consistent", ValidateRiverEdges(tileMap, out var riverDetail), riverDetail);
-        AddCheck(checks, "Visual terrain exists for selected mode", ValidateVisualTerrain(config, terrainRoot, out var visualTerrainDetail), visualTerrainDetail);
+        AddCheck(checks, "Visual terrain exists for selected mode", visualTerrain.IsValid, visualTerrain.Detail);
+        AddCheck(checks, "Terrain3D texture assets are configured", ValidateTerrain3DTextureAssets(visualTerrain, out var textureAssetDetail), textureAssetDetail);
+        AddCheck(checks, "Terrain3D height samples match TerrainInfoMap", ValidateTerrain3DHeightConsistency(config, infoMap, visualTerrain, out var terrain3DHeightDetail), terrain3DHeightDetail);
         AddCheck(checks, "Hex overlay rendered all tiles", overlayRenderer != null && overlayRenderer.LastRenderedTileCount == tileMap.TileCount, overlayRenderer == null ? "overlay renderer missing" : $"rendered={overlayRenderer.LastRenderedTileCount}, expected={tileMap.TileCount}");
         AddCheck(checks, "Hex overlay has grid and map mode meshes", overlayRenderer != null && overlayRenderer.HasRenderedGrid && overlayRenderer.HasTerrainMapMode && overlayRenderer.HasPoliticalMapMode);
         AddCheck(checks, "Hover and selection highlight meshes exist", overlayRenderer != null && overlayRenderer.HasHighlightMeshes);
@@ -46,7 +51,9 @@ public static class WorldMapMvpValidator
         builder.AppendLine($"Seed: {config?.Seed}");
         builder.AppendLine($"InfoMapSize: {config?.InfoMapSize}");
         builder.AppendLine($"TargetHexGridSize: {config?.TargetHexGridSize}");
-        builder.AppendLine($"VisualTerrainMode: {config?.VisualTerrainMode}");
+        builder.AppendLine($"RequestedVisualTerrainMode: {config?.VisualTerrainMode}");
+        builder.AppendLine($"DetectedVisualTerrainMode: {visualTerrain.DetectedMode}");
+        builder.AppendLine($"Terrain3DPluginAvailable: {visualTerrain.PluginAvailable}");
         builder.AppendLine($"HexRadius: {config?.HexRadius}");
         builder.AppendLine();
 
@@ -75,8 +82,8 @@ public static class WorldMapMvpValidator
         builder.AppendLine();
         builder.AppendLine("Known limitations:");
         builder.AppendLine(config?.VisualTerrainMode == VisualTerrainMode.Terrain3D
-            ? "- Terrain3D height writing is active; material/control/color map writing is still pending."
-            : "- ArrayMesh preview mode is selected; Terrain3D height writing is available through VisualTerrainMode.");
+            ? "- Terrain3D height, color, control, and generated texture assets are active; river edge visuals are still pending."
+            : "- ArrayMesh debug preview mode is selected; Terrain3D remains the default visual terrain path.");
         builder.AppendLine("- Generated files under res://world/generated/ are rebakable and intentionally ignored by Git.");
         builder.AppendLine("- River edge gameplay data is baked, but visual river meshes are not yet drawn as edge geometry.");
         builder.AppendLine("- Province, resource, movement, and save/load systems are follow-up milestones.");
@@ -257,36 +264,293 @@ public static class WorldMapMvpValidator
         return sharedRiverEdges > 0 && inconsistentEdges == 0;
     }
 
-    private static bool ValidateVisualTerrain(WorldMapConfig config, Node3D terrainRoot, out string detail)
+    private static VisualTerrainInspection InspectVisualTerrain(WorldMapConfig config, Node3D terrainRoot)
     {
+        var pluginAvailable = ClassDB.ClassExists(Terrain3DClassName);
+
         if (terrainRoot == null)
         {
-            detail = "terrain root missing";
-            return false;
+            return new VisualTerrainInspection(
+                false,
+                DetectedVisualTerrainMode.Missing,
+                pluginAvailable,
+                null,
+                null,
+                0,
+                "terrain root missing");
         }
 
-        if (config?.VisualTerrainMode == VisualTerrainMode.Terrain3D && ClassDB.ClassExists(Terrain3DClassName))
-        {
-            var terrainNode = terrainRoot.GetNodeOrNull<Node>(Terrain3DBaker.Terrain3DNodeName);
+        var terrainNode = terrainRoot.GetNodeOrNull<Node>(Terrain3DBaker.Terrain3DNodeName);
+        var hasTerrain3DNode = terrainNode != null && terrainNode.IsClass(Terrain3DClassName);
+        GodotObject terrainData = null;
+        var regionCount = 0;
 
-            if (terrainNode == null || !terrainNode.IsClass(Terrain3DClassName))
+        if (hasTerrain3DNode)
+        {
+            terrainData = terrainNode.Call("get_data").AsGodotObject();
+            regionCount = terrainData?.Call("get_region_count").AsInt32() ?? 0;
+        }
+
+        if (config?.VisualTerrainMode == VisualTerrainMode.Terrain3D && pluginAvailable)
+        {
+            if (!hasTerrain3DNode)
             {
-                detail = $"Terrain3D node '{Terrain3DBaker.Terrain3DNodeName}' missing";
-                return false;
+                return new VisualTerrainInspection(
+                    false,
+                    DetectedVisualTerrainMode.Missing,
+                    pluginAvailable,
+                    null,
+                    null,
+                    0,
+                    $"Terrain3D node '{Terrain3DBaker.Terrain3DNodeName}' missing");
             }
 
-            var data = terrainNode.Call("get_data").AsGodotObject();
-            var regionCount = data?.Call("get_region_count").AsInt32() ?? 0;
+            if (terrainData == null)
+            {
+                return new VisualTerrainInspection(
+                    false,
+                    DetectedVisualTerrainMode.Terrain3D,
+                    pluginAvailable,
+                    terrainNode,
+                    null,
+                    0,
+                    $"mode=Terrain3D, node={terrainNode.Name}, data=missing");
+            }
 
-            detail = $"mode=Terrain3D, node={terrainNode.Name}, regions={regionCount}";
-            return regionCount > 0;
+            return new VisualTerrainInspection(
+                regionCount > 0,
+                DetectedVisualTerrainMode.Terrain3D,
+                pluginAvailable,
+                terrainNode,
+                terrainData,
+                regionCount,
+                $"mode=Terrain3D, node={terrainNode.Name}, regions={regionCount}");
+        }
+
+        if (hasTerrain3DNode && terrainData != null && regionCount > 0)
+        {
+            return new VisualTerrainInspection(
+                true,
+                DetectedVisualTerrainMode.Terrain3D,
+                pluginAvailable,
+                terrainNode,
+                terrainData,
+                regionCount,
+                $"mode=Terrain3D, node={terrainNode.Name}, regions={regionCount}");
         }
 
         var previewMesh = terrainRoot.GetNodeOrNull<MeshInstance3D>(Terrain3DBaker.TerrainPreviewNodeName)?.Mesh;
-        detail = previewMesh == null
-            ? "ArrayMesh preview mesh missing"
-            : "mode=ArrayMeshPreview";
-        return previewMesh != null;
+
+        if (previewMesh != null)
+        {
+            return new VisualTerrainInspection(
+                true,
+                DetectedVisualTerrainMode.ArrayMeshDebugPreview,
+                pluginAvailable,
+                null,
+                null,
+                0,
+                "mode=ArrayMeshDebugPreview");
+        }
+
+        return new VisualTerrainInspection(
+            false,
+            DetectedVisualTerrainMode.Missing,
+            pluginAvailable,
+            null,
+            null,
+            0,
+            "visual terrain node missing");
+    }
+
+    private static bool ValidateTerrain3DHeightConsistency(
+        WorldMapConfig config,
+        TerrainInfoMap infoMap,
+        VisualTerrainInspection visualTerrain,
+        out string detail)
+    {
+        if (visualTerrain.DetectedMode != DetectedVisualTerrainMode.Terrain3D)
+        {
+            detail = $"skipped: detected_mode={visualTerrain.DetectedMode}";
+            return true;
+        }
+
+        if (config == null)
+        {
+            detail = "config missing";
+            return false;
+        }
+
+        if (infoMap == null)
+        {
+            detail = "terrain info map missing";
+            return false;
+        }
+
+        if (visualTerrain.TerrainData == null)
+        {
+            detail = "Terrain3D data missing";
+            return false;
+        }
+
+        var sampleUvs = new[]
+        {
+            new Vector2(0.001f, 0.001f),
+            new Vector2(0.999f, 0.001f),
+            new Vector2(0.001f, 0.999f),
+            new Vector2(0.999f, 0.999f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(1.0f / 3.0f, 2.0f / 3.0f),
+            new Vector2(0.875f, 0.2f)
+        };
+
+        var maxError = 0.0f;
+        var worstUv = Vector2.Zero;
+        var worstExpected = 0.0f;
+        var worstActual = 0.0f;
+
+        foreach (var uv in sampleUvs)
+        {
+            var worldXz = WorldMapCoordinateUtility.UvToWorldXz(uv, config);
+            var worldPosition = WorldMapCoordinateUtility.WorldXzToWorldPosition(worldXz);
+            var expectedHeight = infoMap.SampleHeightUv(uv);
+            var actualHeight = visualTerrain.TerrainData.Call("get_height", Variant.From(worldPosition)).AsSingle();
+
+            if (!float.IsFinite(actualHeight))
+            {
+                detail = $"non-finite Terrain3D height at uv={uv}, world_xz={worldXz}";
+                return false;
+            }
+
+            var error = MathF.Abs(actualHeight - expectedHeight);
+
+            if (error > maxError)
+            {
+                maxError = error;
+                worstUv = uv;
+                worstExpected = expectedHeight;
+                worstActual = actualHeight;
+            }
+        }
+
+        detail = $"checked_samples={sampleUvs.Length}, max_error={maxError:0.###}, tolerance={Terrain3DHeightTolerance:0.###}, worst_uv={worstUv}, expected={worstExpected:0.###}, terrain3d={worstActual:0.###}";
+        return maxError <= Terrain3DHeightTolerance;
+    }
+
+    private static bool ValidateTerrain3DTextureAssets(VisualTerrainInspection visualTerrain, out string detail)
+    {
+        if (visualTerrain.DetectedMode != DetectedVisualTerrainMode.Terrain3D)
+        {
+            detail = $"skipped: detected_mode={visualTerrain.DetectedMode}";
+            return true;
+        }
+
+        if (visualTerrain.TerrainNode == null)
+        {
+            detail = "Terrain3D node missing";
+            return false;
+        }
+
+        var assets = TryGetGodotObject(visualTerrain.TerrainNode, "assets");
+        assets ??= TryCallGodotObject(visualTerrain.TerrainNode, "get_assets");
+
+        if (assets == null)
+        {
+            detail = "Terrain3D assets resource missing";
+            return false;
+        }
+
+        var textureCount = 0;
+
+        for (var id = 0; id < ExpectedTerrain3DTextureCount; id++)
+        {
+            if (TryCallGodotObject(assets, "get_texture", Variant.From(id)) != null)
+            {
+                textureCount++;
+            }
+        }
+
+        var material = TryGetGodotObject(visualTerrain.TerrainNode, "material");
+        var texturingEnabled = TryGetMaterialBool(material, "enable_texturing", false);
+        var colormapEnabled = TryGetBool(material, "show_colormap", false);
+
+        detail = $"textures={textureCount}, expected={ExpectedTerrain3DTextureCount}, enable_texturing={texturingEnabled}, show_colormap={colormapEnabled}";
+        return textureCount == ExpectedTerrain3DTextureCount && texturingEnabled && colormapEnabled;
+    }
+
+    private static GodotObject TryGetGodotObject(GodotObject target, string property)
+    {
+        if (target == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return target.Get(property).AsGodotObject();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static GodotObject TryCallGodotObject(GodotObject target, string method, params Variant[] arguments)
+    {
+        if (target == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return target.Call(method, arguments).AsGodotObject();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool TryGetMaterialBool(GodotObject target, string property, bool fallback)
+    {
+        if (target == null)
+        {
+            return fallback;
+        }
+
+        try
+        {
+            var parameters = target.Get("_shader_parameters").AsGodotDictionary();
+
+            if (parameters.ContainsKey(property))
+            {
+                return parameters[property].AsBool();
+            }
+        }
+        catch
+        {
+            // Older Terrain3D builds may expose shader options as direct properties.
+        }
+
+        return TryGetBool(target, property, fallback);
+    }
+
+    private static bool TryGetBool(GodotObject target, string property, bool fallback)
+    {
+        if (target == null)
+        {
+            return fallback;
+        }
+
+        try
+        {
+            return target.Get(property).AsBool();
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 
     private static int CountTiles(HexTileMap tileMap, TilePredicate predicate)
@@ -315,6 +579,22 @@ public static class WorldMapMvpValidator
     }
 
     private delegate bool TilePredicate(HexTileMap tileMap, int index);
+
+    private enum DetectedVisualTerrainMode
+    {
+        Missing = 0,
+        ArrayMeshDebugPreview = 1,
+        Terrain3D = 2
+    }
+
+    private readonly record struct VisualTerrainInspection(
+        bool IsValid,
+        DetectedVisualTerrainMode DetectedMode,
+        bool PluginAvailable,
+        Node TerrainNode,
+        GodotObject TerrainData,
+        int RegionCount,
+        string Detail);
 
     private readonly record struct ValidationCheck(string Name, bool Passed, string Detail);
 }

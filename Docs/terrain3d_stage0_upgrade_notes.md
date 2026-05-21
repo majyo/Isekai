@@ -14,7 +14,7 @@
 
 - 官方发布说明标明该维护版本支持 Godot 4.6。
 - 项目目标引擎为 Godot 4.6.2 Mono。
-- 当前项目已经启用 Terrain3D 插件，但正式写入路径尚未实现。
+- 当前项目已经启用 Terrain3D 插件；阶段 0 只锁定版本，正式写入路径在阶段 3 后接入。
 
 ## 本次改动
 
@@ -167,7 +167,7 @@ https://github.com/TokisanGames/Terrain3D/releases/tag/v1.0.1-stable
 ```text
 MVP validation passed.
 Terrain3D plugin is available.
-ArrayMesh preview fallback still works.
+ArrayMesh debug preview still works.
 ```
 
 ## 后续入口

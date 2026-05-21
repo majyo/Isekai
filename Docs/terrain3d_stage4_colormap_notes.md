@@ -43,7 +43,7 @@ show_checkered = false
 show_colormap = true
 ```
 
-这样即使还没有正式 Terrain3D texture/control 资产，也能用 color map 表达主要地貌。
+阶段 7 之后，color map 继续作为整体地貌 tint；正式 texture/control 资产负责增加材质细节。
 
 ## 报告输出
 
@@ -61,13 +61,21 @@ show_colormap = true
 
 ```powershell
 dotnet build Isekai.csproj
+& 'D:\workspace\godot\Godot_v4.6.2-stable_mono_win64\Godot_v4.6.2-stable_mono_win64_console.exe' --headless --path . --quit
 ```
 
-仍待 Godot runtime 验证：
+Godot runtime 验证结果：
 
-- Terrain3D 是否成功导入 `TYPE_COLOR`。
-- `show_colormap` 是否在实际材质上生效。
-- `visual_terrain_bake_report.txt` 是否出现颜色覆盖比例。
-- `world_map_mvp_validation_report.txt` 是否仍 PASS。
+- `EffectiveVisualTerrainMode: Terrain3D`
+- `ColorImageSize: (1024, 1024)`
+- `ColormapMaterialConfigured: True`
+- `ColorLayerCoverage` 已输出。
+- `world_map_mvp_validation_report.txt` PASS。
 
-当前环境仍未发现 AGENTS.md 中记录的 Godot 可执行文件路径，`godot` 也不在 `PATH`。
+## 视觉修正
+
+2026-05-21 追加修正：
+
+- 原岩石混色规则过于激进，导致大部分陆地被 `Rock` 覆盖成灰色。
+- 岩石权重现在主要作用于 `Mountain` 和 `Hills`，普通草地、森林、海岸和沙漠只在极陡坡上获得轻微岩石混色。
+- `ColorLayerCoverage` 中 `Rock` 从约 `40.82%` 降到约 `1.74%`，正常 biome 颜色恢复可见。

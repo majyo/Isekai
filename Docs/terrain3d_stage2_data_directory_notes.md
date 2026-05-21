@@ -28,6 +28,8 @@ res://world/terrain/generated/reports/
 
 ```text
 /world/terrain/generated/*
+/world/terrain/generated/terrain3d_data/*
+/world/terrain/generated/reports/*
 ```
 
 并保留目录占位：
