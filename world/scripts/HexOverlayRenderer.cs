@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 namespace Isekai.World;
@@ -9,12 +10,16 @@ public sealed partial class HexOverlayRenderer : Node3D
     private const string PoliticalModeNodeName = "political_map_mode_mesh";
     private const string HoverHighlightNodeName = "hover_highlight";
     private const string SelectionHighlightNodeName = "selection_highlight";
+    private const float WaterPlaneOverlayClearance = 0.45f;
 
     [Export] public NodePath MapModeOverlayPath { get; set; } = "../map_mode_overlay";
     [Export] public HexMapMode InitialMapMode { get; set; } = HexMapMode.Terrain;
 
     [Export(PropertyHint.Range, "0,16,0.05")]
-    public float OverlayHeightOffset { get; set; } = 1.25f;
+    public float OverlayHeightOffset { get; set; } = 3.0f;
+
+    [Export(PropertyHint.Range, "1,5,1")]
+    public int OverlaySurfaceSubdivisions { get; set; } = 2;
 
     [Export(PropertyHint.Range, "0,1,0.01")]
     public float GridAlpha { get; set; } = 0.42f;
@@ -170,15 +175,22 @@ public sealed partial class HexOverlayRenderer : Node3D
         surfaceTool.Begin(Mesh.PrimitiveType.Lines);
 
         var color = new Color(0.88f, 0.94f, 1.0f, GridAlpha);
+        var edgeSegments = GetGridEdgeSegments();
 
         for (var tileIndex = 0; tileIndex < _tileMap.TileCount; tileIndex++)
         {
+            var centerWorldXz = new Vector2(_tileMap.WorldCenterX[tileIndex], _tileMap.WorldCenterZ[tileIndex]);
+
             for (var corner = 0; corner < 6; corner++)
             {
-                surfaceTool.SetColor(color);
-                surfaceTool.AddVertex(GetCornerPosition(tileIndex, corner, OverlayHeightOffset));
-                surfaceTool.SetColor(color);
-                surfaceTool.AddVertex(GetCornerPosition(tileIndex, (corner + 1) % 6, OverlayHeightOffset));
+                var startWorldXz = WorldMapCoordinateUtility.GetHexCornerWorldXz(centerWorldXz, _config.HexRadius, corner);
+                var endWorldXz = WorldMapCoordinateUtility.GetHexCornerWorldXz(centerWorldXz, _config.HexRadius, (corner + 1) % 6);
+
+                for (var segment = 0; segment < edgeSegments; segment++)
+                {
+                    AddSurfaceVertex(surfaceTool, startWorldXz.Lerp(endWorldXz, segment / (float)edgeSegments), color, OverlayHeightOffset);
+                    AddSurfaceVertex(surfaceTool, startWorldXz.Lerp(endWorldXz, (segment + 1) / (float)edgeSegments), color, OverlayHeightOffset);
+                }
             }
         }
 
@@ -203,15 +215,7 @@ public sealed partial class HexOverlayRenderer : Node3D
 
             color.A = FillAlpha;
 
-            for (var corner = 0; corner < 6; corner++)
-            {
-                surfaceTool.SetColor(color);
-                surfaceTool.AddVertex(GetTileCenterPosition(tileIndex, OverlayHeightOffset + 0.25f));
-                surfaceTool.SetColor(color);
-                surfaceTool.AddVertex(GetCornerPosition(tileIndex, corner, OverlayHeightOffset + 0.25f));
-                surfaceTool.SetColor(color);
-                surfaceTool.AddVertex(GetCornerPosition(tileIndex, (corner + 1) % 6, OverlayHeightOffset + 0.25f));
-            }
+            AddHexSurface(surfaceTool, tileIndex, color, OverlayHeightOffset + 0.25f);
         }
 
         surfaceTool.GenerateNormals();
@@ -250,15 +254,7 @@ public sealed partial class HexOverlayRenderer : Node3D
         var surfaceTool = new SurfaceTool();
         surfaceTool.Begin(Mesh.PrimitiveType.Triangles);
 
-        for (var corner = 0; corner < 6; corner++)
-        {
-            surfaceTool.SetColor(color);
-            surfaceTool.AddVertex(GetTileCenterPosition(tileIndex, heightOffset));
-            surfaceTool.SetColor(color);
-            surfaceTool.AddVertex(GetCornerPosition(tileIndex, corner, heightOffset));
-            surfaceTool.SetColor(color);
-            surfaceTool.AddVertex(GetCornerPosition(tileIndex, (corner + 1) % 6, heightOffset));
-        }
+        AddHexSurface(surfaceTool, tileIndex, color, heightOffset);
 
         surfaceTool.GenerateNormals();
         meshInstance.Mesh = surfaceTool.Commit();
@@ -266,19 +262,84 @@ public sealed partial class HexOverlayRenderer : Node3D
         meshInstance.Visible = _isHexOverlayVisible;
     }
 
-    private Vector3 GetTileCenterPosition(int tileIndex, float heightOffset)
+    private void AddHexSurface(SurfaceTool surfaceTool, int tileIndex, Color color, float heightOffset)
     {
-        var worldXz = new Vector2(_tileMap.WorldCenterX[tileIndex], _tileMap.WorldCenterZ[tileIndex]);
-        var height = _infoMap.SampleHeightUv(WorldMapCoordinateUtility.WorldXzToUv(worldXz, _config));
+        var centerWorldXz = new Vector2(_tileMap.WorldCenterX[tileIndex], _tileMap.WorldCenterZ[tileIndex]);
+        var subdivisions = GetOverlaySurfaceSubdivisions();
+
+        for (var corner = 0; corner < 6; corner++)
+        {
+            var cornerA = WorldMapCoordinateUtility.GetHexCornerWorldXz(centerWorldXz, _config.HexRadius, corner);
+            var cornerB = WorldMapCoordinateUtility.GetHexCornerWorldXz(centerWorldXz, _config.HexRadius, (corner + 1) % 6);
+            AddSubdividedTriangle(surfaceTool, centerWorldXz, cornerA, cornerB, color, heightOffset, subdivisions);
+        }
+    }
+
+    private void AddSubdividedTriangle(
+        SurfaceTool surfaceTool,
+        Vector2 a,
+        Vector2 b,
+        Vector2 c,
+        Color color,
+        float heightOffset,
+        int subdivisions)
+    {
+        for (var i = 0; i < subdivisions; i++)
+        {
+            for (var j = 0; j < subdivisions - i; j++)
+            {
+                AddSurfaceVertex(surfaceTool, GetTrianglePoint(a, b, c, i, j, subdivisions), color, heightOffset);
+                AddSurfaceVertex(surfaceTool, GetTrianglePoint(a, b, c, i + 1, j, subdivisions), color, heightOffset);
+                AddSurfaceVertex(surfaceTool, GetTrianglePoint(a, b, c, i, j + 1, subdivisions), color, heightOffset);
+
+                if (i + j >= subdivisions - 1)
+                {
+                    continue;
+                }
+
+                AddSurfaceVertex(surfaceTool, GetTrianglePoint(a, b, c, i + 1, j, subdivisions), color, heightOffset);
+                AddSurfaceVertex(surfaceTool, GetTrianglePoint(a, b, c, i + 1, j + 1, subdivisions), color, heightOffset);
+                AddSurfaceVertex(surfaceTool, GetTrianglePoint(a, b, c, i, j + 1, subdivisions), color, heightOffset);
+            }
+        }
+    }
+
+    private void AddSurfaceVertex(SurfaceTool surfaceTool, Vector2 worldXz, Color color, float heightOffset)
+    {
+        surfaceTool.SetColor(color);
+        surfaceTool.AddVertex(GetOverlaySurfacePosition(worldXz, heightOffset));
+    }
+
+    private Vector3 GetOverlaySurfacePosition(Vector2 worldXz, float heightOffset)
+    {
+        var uv = WorldMapCoordinateUtility.WorldXzToUv(worldXz, _config);
+        var height = _infoMap.SampleHeightUv(uv);
+
+        if (height <= _config.SeaLevel)
+        {
+            height = Mathf.Max(height, _config.SeaLevel + WaterPlaneOverlayClearance);
+        }
+
         return WorldMapCoordinateUtility.WorldXzToWorldPosition(worldXz, height + heightOffset);
     }
 
-    private Vector3 GetCornerPosition(int tileIndex, int cornerIndex, float heightOffset)
+    private int GetOverlaySurfaceSubdivisions()
     {
-        var centerWorldXz = new Vector2(_tileMap.WorldCenterX[tileIndex], _tileMap.WorldCenterZ[tileIndex]);
-        var cornerWorldXz = WorldMapCoordinateUtility.GetHexCornerWorldXz(centerWorldXz, _config.HexRadius, cornerIndex);
-        var height = _infoMap.SampleHeightUv(WorldMapCoordinateUtility.WorldXzToUv(cornerWorldXz, _config));
-        return WorldMapCoordinateUtility.WorldXzToWorldPosition(cornerWorldXz, height + heightOffset);
+        return Math.Clamp(OverlaySurfaceSubdivisions, 1, 5);
+    }
+
+    private int GetGridEdgeSegments()
+    {
+        return Math.Max(1, GetOverlaySurfaceSubdivisions() * 2);
+    }
+
+    private static Vector2 GetTrianglePoint(Vector2 a, Vector2 b, Vector2 c, int bStep, int cStep, int subdivisions)
+    {
+        var bWeight = bStep / (float)subdivisions;
+        var cWeight = cStep / (float)subdivisions;
+        var aWeight = 1.0f - bWeight - cWeight;
+
+        return a * aWeight + b * bWeight + c * cWeight;
     }
 
     private static StandardMaterial3D BuildOverlayMaterial()
