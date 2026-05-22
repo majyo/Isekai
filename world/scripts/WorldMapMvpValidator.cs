@@ -37,6 +37,7 @@ public static class WorldMapMvpValidator
         AddCheck(checks, "River edge data is present and bidirectionally consistent", ValidateRiverEdges(tileMap, out var riverDetail), riverDetail);
         AddCheck(checks, "Visual terrain exists for selected mode", visualTerrain.IsValid, visualTerrain.Detail);
         AddCheck(checks, "Terrain3D texture assets are configured", ValidateTerrain3DTextureAssets(visualTerrain, out var textureAssetDetail), textureAssetDetail);
+        AddCheck(checks, "Terrain3D control map has texture id variety", ValidateTerrain3DControlTextureIds(config, visualTerrain, out var controlTextureDetail), controlTextureDetail);
         AddCheck(checks, "Terrain3D height samples match TerrainInfoMap", ValidateTerrain3DHeightConsistency(config, infoMap, visualTerrain, out var terrain3DHeightDetail), terrain3DHeightDetail);
         AddCheck(checks, "Hex overlay rendered all tiles", overlayRenderer != null && overlayRenderer.LastRenderedTileCount == tileMap.TileCount, overlayRenderer == null ? "overlay renderer missing" : $"rendered={overlayRenderer.LastRenderedTileCount}, expected={tileMap.TileCount}");
         AddCheck(checks, "Hex overlay has grid and map mode meshes", overlayRenderer != null && overlayRenderer.HasRenderedGrid && overlayRenderer.HasTerrainMapMode && overlayRenderer.HasPoliticalMapMode);
@@ -473,9 +474,60 @@ public static class WorldMapMvpValidator
         var material = TryGetGodotObject(visualTerrain.TerrainNode, "material");
         var texturingEnabled = TryGetMaterialBool(material, "enable_texturing", false);
         var colormapEnabled = TryGetBool(material, "show_colormap", false);
+        var albedoArrayValid = TryCallRidValid(assets, "get_albedo_array_rid");
+        var normalArrayValid = TryCallRidValid(assets, "get_normal_array_rid");
 
-        detail = $"textures={textureCount}, expected={ExpectedTerrain3DTextureCount}, enable_texturing={texturingEnabled}, show_colormap={colormapEnabled}";
-        return textureCount == ExpectedTerrain3DTextureCount && texturingEnabled && colormapEnabled;
+        detail = $"textures={textureCount}, expected={ExpectedTerrain3DTextureCount}, enable_texturing={texturingEnabled}, show_colormap={colormapEnabled}, albedo_array={albedoArrayValid}, normal_array={normalArrayValid}";
+        return textureCount == ExpectedTerrain3DTextureCount && texturingEnabled && colormapEnabled && albedoArrayValid && normalArrayValid;
+    }
+
+    private static bool ValidateTerrain3DControlTextureIds(
+        WorldMapConfig config,
+        VisualTerrainInspection visualTerrain,
+        out string detail)
+    {
+        if (visualTerrain.DetectedMode != DetectedVisualTerrainMode.Terrain3D)
+        {
+            detail = $"skipped: detected_mode={visualTerrain.DetectedMode}";
+            return true;
+        }
+
+        if (config == null)
+        {
+            detail = "config missing";
+            return false;
+        }
+
+        if (visualTerrain.TerrainData == null)
+        {
+            detail = "Terrain3D data missing";
+            return false;
+        }
+
+        var distinctIds = new HashSet<int>();
+        var invalidIds = 0;
+
+        for (var y = 1; y <= 5; y++)
+        {
+            for (var x = 1; x <= 5; x++)
+            {
+                var uv = new Vector2(x / 6.0f, y / 6.0f);
+                var worldXz = WorldMapCoordinateUtility.UvToWorldXz(uv, config);
+                var worldPosition = WorldMapCoordinateUtility.WorldXzToWorldPosition(worldXz);
+                var textureId = visualTerrain.TerrainData.Call("get_control_base_id", Variant.From(worldPosition)).AsInt32();
+
+                if (textureId < 0 || textureId >= ExpectedTerrain3DTextureCount)
+                {
+                    invalidIds++;
+                    continue;
+                }
+
+                distinctIds.Add(textureId);
+            }
+        }
+
+        detail = $"distinct_texture_ids={string.Join(",", distinctIds)}, distinct_count={distinctIds.Count}, invalid_ids={invalidIds}";
+        return invalidIds == 0 && distinctIds.Count >= 3;
     }
 
     private static GodotObject TryGetGodotObject(GodotObject target, string property)
@@ -534,6 +586,24 @@ public static class WorldMapMvpValidator
         }
 
         return TryGetBool(target, property, fallback);
+    }
+
+    private static bool TryCallRidValid(GodotObject target, string method)
+    {
+        if (target == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var rid = target.Call(method).AsRid();
+            return rid.IsValid;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool TryGetBool(GodotObject target, string property, bool fallback)

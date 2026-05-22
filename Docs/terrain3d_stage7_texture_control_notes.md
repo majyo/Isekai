@@ -25,6 +25,8 @@
   - `Rock`
   - `Riverbank`
 - 创建 `Terrain3DAssets` 和 `Terrain3DTextureAsset`，把纹理挂到 slot `0..9`。
+- 从 albedo alpha 派生 normal/roughness 纹理并挂到对应 texture asset。
+- 显式调用 `Terrain3DAssets.update_texture_list()` 和 `Terrain3DMaterial.update()`，确保 shader 可采样的 texture array 被刷新。
 
 生成纹理写入：
 
@@ -76,10 +78,13 @@ Godot runtime 验证结果：
 - `ControlImageSize: (1024, 1024)`
 - `TextureAssetsConfigured: True`
 - `TextureAssetCount: 10`
+- `albedo_array=True`
+- `normal_array=True`
+- `distinct_texture_ids` 覆盖多个 texture slot
 - `world_map_mvp_validation_report.txt` PASS。
 
 ## 后续可优化
 
-- 为 texture 生成法线图或引入正式美术贴图。
+- 引入正式美术贴图，替换当前程序纹理。
 - 在 layer 边界写 overlay/blend，减少硬切换。
 - 把河流边缘可视化从湿润 tint 提升到独立河道 mesh 或 Terrain3D paint pass。

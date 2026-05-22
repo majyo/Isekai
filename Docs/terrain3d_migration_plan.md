@@ -183,7 +183,7 @@ res://world/terrain/generated/reports/
 | --- | --- | --- | --- | --- | --- |
 | T3D-0701 | [x] | P0 | 为每个 Terrain color layer 生成可重复纹理 | `Terrain3DBaker.cs` / `world/terrain/generated/textures/` | 烘焙输出 10 张 layer albedo PNG |
 | T3D-0702 | [x] | P0 | 写入 Terrain3D `TYPE_CONTROL` 图 | `Terrain3DBaker.cs` | control map 与 color layer 分类一致 |
-| T3D-0703 | [x] | P0 | 配置 `Terrain3DAssets` texture slots | `Terrain3DBaker.cs` | 报告显示 `TextureAssetsConfigured: True` 和 `TextureAssetCount: 10` |
+| T3D-0703 | [x] | P0 | 配置 `Terrain3DAssets` texture slots | `Terrain3DBaker.cs` | 报告显示 `TextureAssetsConfigured: True`、`TextureAssetCount: 10` 和有效 texture array |
 | T3D-0704 | [x] | P1 | 保留 colormap 作为地貌 tint | `Terrain3DBaker.cs` | `show_colormap` 和 `enable_texturing` 同时启用 |
 | T3D-0705 | [x] | P1 | 更新验证报告中的旧限制说明 | `WorldMapMvpValidator.cs` | MVP 报告不再写 texture/control pending |
 

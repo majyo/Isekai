@@ -150,7 +150,8 @@ public sealed class Terrain3DBaker
 
             if (textureBake.Configured)
             {
-                terrain.Set("assets", Variant.From(textureBake.Assets));
+                terrain.Call("set_assets", Variant.From(textureBake.Assets));
+                textureBake.Assets.Call("update_texture_list");
             }
 
             var images = new GodotArray();
@@ -347,7 +348,9 @@ public sealed class Terrain3DBaker
             var layer = (TerrainColorLayer)id;
             var spec = GetLayerTextureSpec(layer);
             var image = BuildLayerAlbedoTexture(layer, spec, TerrainLayerTextureSize);
+            var normalImage = BuildLayerNormalRoughnessTexture(image, spec);
             image.GenerateMipmaps();
+            normalImage.GenerateMipmaps();
 
             var filePath = Path.Combine(textureDirectory, $"{layer.ToString().ToLowerInvariant()}_albedo.png");
             var saveResult = image.SavePng(filePath);
@@ -358,6 +361,7 @@ public sealed class Terrain3DBaker
             }
 
             var texture = ImageTexture.CreateFromImage(image);
+            var normalTexture = ImageTexture.CreateFromImage(normalImage);
             var textureAsset = ClassDB.Instantiate(Terrain3DTextureAssetClassName).AsGodotObject();
 
             if (textureAsset == null)
@@ -369,6 +373,8 @@ public sealed class Terrain3DBaker
             TryCall(textureAsset, "set_name", Variant.From(layer.ToString()));
             TryCall(textureAsset, "set_albedo_texture", Variant.From(texture));
             TryCall(textureAsset, "set_albedo_color", Variant.From(Colors.White));
+            TryCall(textureAsset, "set_normal_texture", Variant.From(normalTexture));
+            TryCall(textureAsset, "set_normal_depth", Variant.From(spec.NormalDepth));
             TryCall(textureAsset, "set_uv_scale", Variant.From(spec.UvScale));
             TrySet(textureAsset, "uv_scale", Variant.From(spec.UvScale));
             assets.Call("set_texture", Variant.From(id), Variant.From(textureAsset));
@@ -376,6 +382,8 @@ public sealed class Terrain3DBaker
             textureCount++;
             report.AppendLine($"- {layer}: slot={id}, uv_scale={spec.UvScale:0.##}, texture={DefaultTerrain3DTextureDirectory}/{Path.GetFileName(filePath)}");
         }
+
+        assets.Call("update_texture_list");
 
         return new TerrainTextureBakeResult(
             true,
@@ -426,6 +434,43 @@ public sealed class Terrain3DBaker
         }
 
         return image;
+    }
+
+    private static Image BuildLayerNormalRoughnessTexture(Image albedoHeight, TerrainLayerTextureSpec spec)
+    {
+        var size = albedoHeight.GetWidth();
+        var image = Image.CreateEmpty(size, size, true, Image.Format.Rgba8);
+        var strength = spec.NormalStrength;
+
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var left = SampleAlphaWrapped(albedoHeight, x - 1, y);
+                var right = SampleAlphaWrapped(albedoHeight, x + 1, y);
+                var down = SampleAlphaWrapped(albedoHeight, x, y - 1);
+                var up = SampleAlphaWrapped(albedoHeight, x, y + 1);
+                var normal = new Vector3((left - right) * strength, 1.0f, (down - up) * strength).Normalized();
+
+                image.SetPixel(
+                    x,
+                    y,
+                    new Color(
+                        normal.X * 0.5f + 0.5f,
+                        normal.Z * 0.5f + 0.5f,
+                        normal.Y * 0.5f + 0.5f,
+                        spec.Roughness));
+            }
+        }
+
+        return image;
+    }
+
+    private static float SampleAlphaWrapped(Image image, int x, int y)
+    {
+        var width = image.GetWidth();
+        var height = image.GetHeight();
+        return image.GetPixel(PositiveMod(x, width), PositiveMod(y, height)).A;
     }
 
     private static Color ApplyLayerTextureDetail(
@@ -479,17 +524,17 @@ public sealed class Terrain3DBaker
     {
         return layer switch
         {
-            TerrainColorLayer.Ocean => new TerrainLayerTextureSpec(new Color(0.08f, 0.30f, 0.52f), new Color(0.03f, 0.11f, 0.26f), new Color(0.15f, 0.43f, 0.66f), 101, 5, 0.58f, 0.30f, 0.18f, 0.12f, new Vector2(4.0f, 9.0f), 0.22f, 0.42f),
-            TerrainColorLayer.Coast => new TerrainLayerTextureSpec(new Color(0.74f, 0.66f, 0.41f), new Color(0.52f, 0.44f, 0.25f), new Color(0.91f, 0.82f, 0.55f), 211, 9, 0.48f, 0.26f, 0.42f, 0.08f, new Vector2(11.0f, 3.0f), 0.12f, 1.25f),
-            TerrainColorLayer.Grassland => new TerrainLayerTextureSpec(new Color(0.31f, 0.54f, 0.21f), new Color(0.18f, 0.34f, 0.12f), new Color(0.47f, 0.66f, 0.30f), 307, 10, 0.62f, 0.34f, 0.28f, 0.08f, new Vector2(17.0f, 5.0f), 0.10f, 1.45f),
-            TerrainColorLayer.Forest => new TerrainLayerTextureSpec(new Color(0.10f, 0.30f, 0.13f), new Color(0.04f, 0.14f, 0.06f), new Color(0.20f, 0.44f, 0.20f), 409, 8, 0.82f, 0.42f, 0.36f, 0.06f, new Vector2(8.0f, 12.0f), 0.14f, 1.1f),
-            TerrainColorLayer.Desert => new TerrainLayerTextureSpec(new Color(0.72f, 0.56f, 0.28f), new Color(0.52f, 0.38f, 0.18f), new Color(0.91f, 0.73f, 0.39f), 503, 7, 0.45f, 0.22f, 0.40f, 0.24f, new Vector2(7.0f, 15.0f), 0.18f, 0.95f),
-            TerrainColorLayer.Tundra => new TerrainLayerTextureSpec(new Color(0.61f, 0.69f, 0.67f), new Color(0.42f, 0.50f, 0.49f), new Color(0.80f, 0.84f, 0.78f), 607, 8, 0.52f, 0.24f, 0.24f, 0.06f, new Vector2(13.0f, 6.0f), 0.09f, 1.05f),
-            TerrainColorLayer.Hills => new TerrainLayerTextureSpec(new Color(0.42f, 0.39f, 0.25f), new Color(0.25f, 0.23f, 0.15f), new Color(0.58f, 0.53f, 0.32f), 701, 7, 0.70f, 0.46f, 0.26f, 0.22f, new Vector2(10.0f, 18.0f), 0.24f, 0.85f),
-            TerrainColorLayer.Mountain => new TerrainLayerTextureSpec(new Color(0.50f, 0.49f, 0.46f), new Color(0.30f, 0.30f, 0.29f), new Color(0.72f, 0.71f, 0.66f), 809, 6, 0.78f, 0.52f, 0.20f, 0.36f, new Vector2(16.0f, 22.0f), 0.32f, 0.7f),
-            TerrainColorLayer.Rock => new TerrainLayerTextureSpec(new Color(0.45f, 0.45f, 0.42f), new Color(0.25f, 0.25f, 0.23f), new Color(0.62f, 0.61f, 0.56f), 907, 6, 0.88f, 0.62f, 0.22f, 0.46f, new Vector2(20.0f, 27.0f), 0.38f, 0.75f),
-            TerrainColorLayer.Riverbank => new TerrainLayerTextureSpec(new Color(0.18f, 0.23f, 0.15f), new Color(0.08f, 0.11f, 0.08f), new Color(0.32f, 0.30f, 0.19f), 1009, 11, 0.56f, 0.36f, 0.36f, 0.08f, new Vector2(14.0f, 4.0f), 0.16f, 1.35f),
-            _ => new TerrainLayerTextureSpec(new Color(0.35f, 0.48f, 0.28f), new Color(0.22f, 0.30f, 0.16f), new Color(0.52f, 0.62f, 0.34f), 1, 8, 0.5f, 0.3f, 0.25f, 0.1f, new Vector2(8.0f, 8.0f), 0.12f, 1.0f)
+            TerrainColorLayer.Ocean => new TerrainLayerTextureSpec(new Color(0.08f, 0.30f, 0.52f), new Color(0.03f, 0.11f, 0.26f), new Color(0.15f, 0.43f, 0.66f), 101, 5, 0.58f, 0.30f, 0.18f, 0.12f, new Vector2(4.0f, 9.0f), 0.22f, 0.22f, 0.18f, 2.0f, 0.58f),
+            TerrainColorLayer.Coast => new TerrainLayerTextureSpec(new Color(0.74f, 0.66f, 0.41f), new Color(0.52f, 0.44f, 0.25f), new Color(0.91f, 0.82f, 0.55f), 211, 9, 0.48f, 0.26f, 0.42f, 0.08f, new Vector2(11.0f, 3.0f), 0.12f, 0.55f, 0.34f, 4.0f, 0.82f),
+            TerrainColorLayer.Grassland => new TerrainLayerTextureSpec(new Color(0.31f, 0.54f, 0.21f), new Color(0.18f, 0.34f, 0.12f), new Color(0.47f, 0.66f, 0.30f), 307, 10, 0.62f, 0.34f, 0.28f, 0.08f, new Vector2(17.0f, 5.0f), 0.10f, 0.38f, 0.50f, 5.0f, 0.88f),
+            TerrainColorLayer.Forest => new TerrainLayerTextureSpec(new Color(0.10f, 0.30f, 0.13f), new Color(0.04f, 0.14f, 0.06f), new Color(0.20f, 0.44f, 0.20f), 409, 8, 0.82f, 0.42f, 0.36f, 0.06f, new Vector2(8.0f, 12.0f), 0.14f, 0.32f, 0.46f, 4.5f, 0.94f),
+            TerrainColorLayer.Desert => new TerrainLayerTextureSpec(new Color(0.72f, 0.56f, 0.28f), new Color(0.52f, 0.38f, 0.18f), new Color(0.91f, 0.73f, 0.39f), 503, 7, 0.45f, 0.22f, 0.40f, 0.24f, new Vector2(7.0f, 15.0f), 0.18f, 0.45f, 0.30f, 3.8f, 0.78f),
+            TerrainColorLayer.Tundra => new TerrainLayerTextureSpec(new Color(0.61f, 0.69f, 0.67f), new Color(0.42f, 0.50f, 0.49f), new Color(0.80f, 0.84f, 0.78f), 607, 8, 0.52f, 0.24f, 0.24f, 0.06f, new Vector2(13.0f, 6.0f), 0.09f, 0.40f, 0.32f, 3.4f, 0.86f),
+            TerrainColorLayer.Hills => new TerrainLayerTextureSpec(new Color(0.42f, 0.39f, 0.25f), new Color(0.25f, 0.23f, 0.15f), new Color(0.58f, 0.53f, 0.32f), 701, 7, 0.70f, 0.46f, 0.26f, 0.22f, new Vector2(10.0f, 18.0f), 0.24f, 0.34f, 0.72f, 6.0f, 0.9f),
+            TerrainColorLayer.Mountain => new TerrainLayerTextureSpec(new Color(0.50f, 0.49f, 0.46f), new Color(0.30f, 0.30f, 0.29f), new Color(0.72f, 0.71f, 0.66f), 809, 6, 0.78f, 0.52f, 0.20f, 0.36f, new Vector2(16.0f, 22.0f), 0.32f, 0.28f, 0.92f, 7.0f, 0.95f),
+            TerrainColorLayer.Rock => new TerrainLayerTextureSpec(new Color(0.45f, 0.45f, 0.42f), new Color(0.25f, 0.25f, 0.23f), new Color(0.62f, 0.61f, 0.56f), 907, 6, 0.88f, 0.62f, 0.22f, 0.46f, new Vector2(20.0f, 27.0f), 0.38f, 0.42f, 1.0f, 8.0f, 0.96f),
+            TerrainColorLayer.Riverbank => new TerrainLayerTextureSpec(new Color(0.18f, 0.23f, 0.15f), new Color(0.08f, 0.11f, 0.08f), new Color(0.32f, 0.30f, 0.19f), 1009, 11, 0.56f, 0.36f, 0.36f, 0.08f, new Vector2(14.0f, 4.0f), 0.16f, 0.50f, 0.45f, 4.5f, 0.92f),
+            _ => new TerrainLayerTextureSpec(new Color(0.35f, 0.48f, 0.28f), new Color(0.22f, 0.30f, 0.16f), new Color(0.52f, 0.62f, 0.34f), 1, 8, 0.5f, 0.3f, 0.25f, 0.1f, new Vector2(8.0f, 8.0f), 0.12f, 0.5f, 0.5f, 4.0f, 0.9f)
         };
     }
 
@@ -623,10 +668,13 @@ public sealed class Terrain3DBaker
 
         material.Set("show_checkered", Variant.From(false));
         material.Set("show_colormap", Variant.From(true));
+        TrySet(terrain, "show_checkered", Variant.From(false));
+        TrySet(terrain, "show_colormap", Variant.From(true));
         SetTerrain3DMaterialShaderParameter(material, "enable_texturing", Variant.From(enableTexturing));
         SetTerrain3DMaterialShaderParameter(material, "blend_sharpness", Variant.From(0.72f));
         SetTerrain3DMaterialShaderParameter(material, "height_blending", Variant.From(true));
         SetTerrain3DMaterialShaderParameter(material, "enable_macro_variation", Variant.From(true));
+        TryCall(material, "update");
         return true;
     }
 
@@ -1130,7 +1178,10 @@ public sealed class Terrain3DBaker
         float BandStrength,
         Vector2 BandFrequency,
         float BandWarp,
-        float UvScale);
+        float UvScale,
+        float NormalDepth,
+        float NormalStrength,
+        float Roughness);
 
     private const int TerrainColorLayerCount = 10;
 
