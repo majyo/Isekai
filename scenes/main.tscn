@@ -2,6 +2,6 @@
 
 [ext_resource type="PackedScene" path="res://world/scenes/world_map.tscn" id="1_5r1j6"]
 
-[node name="Main" type="Node3D"]
+[node name="Main" type="Node2D"]
 
 [node name="world_map" parent="." instance=ExtResource("1_5r1j6")]

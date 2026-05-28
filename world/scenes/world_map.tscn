@@ -1,34 +1,32 @@
-[gd_scene load_steps=5 format=3 uid="uid://de42f0w6habl2"]
+[gd_scene load_steps=6 format=3 uid="uid://de42f0w6habl2"]
 
 [ext_resource type="Script" uid="uid://cjifhc8rktqy6" path="res://world/scripts/WorldMapPrototype.cs" id="1_yo5b8"]
-[ext_resource type="Script" uid="uid://daqmaleo11mol" path="res://world/scripts/FreeLookCameraController.cs" id="2_7qgns"]
+[ext_resource type="Script" path="res://world/scripts/HexTileTerrainRenderer.cs" id="2_tileterrain"]
 [ext_resource type="Script" path="res://world/scripts/HexOverlayRenderer.cs" id="3_d8ng5"]
 [ext_resource type="Script" path="res://world/scripts/WorldMapInputController.cs" id="4_m76y4"]
+[ext_resource type="Script" path="res://world/scripts/MapCamera2DController.cs" id="5_mapcamera"]
 
-[node name="world_map" type="Node3D" unique_id=1062054052]
+[node name="world_map" type="Node2D" unique_id=1062054052]
 script = ExtResource("1_yo5b8")
 
-[node name="terrain_root" type="Node3D" parent="." unique_id=792124556]
+[node name="terrain_tilemap" type="TileMapLayer" parent="." unique_id=792124556]
+script = ExtResource("2_tileterrain")
 
-[node name="hex_overlay" type="Node3D" parent="." unique_id=1438003290]
+[node name="map_mode_overlay" type="Node2D" parent="." unique_id=913480602]
+
+[node name="hex_overlay" type="Node2D" parent="." unique_id=1438003290]
+z_index = 10
 script = ExtResource("3_d8ng5")
 
-[node name="map_mode_overlay" type="Node3D" parent="." unique_id=913480602]
+[node name="markers" type="Node2D" parent="." unique_id=1524427136]
+z_index = 20
 
-[node name="markers" type="Node3D" parent="." unique_id=1524427136]
-
-[node name="world_map_input" type="Node" parent="." unique_id=671298753]
+[node name="world_map_input" type="Node2D" parent="." unique_id=671298753]
 script = ExtResource("4_m76y4")
 
-[node name="camera_controller" type="Node3D" parent="." unique_id=1680195504]
-transform = Transform3D(1, 0, 0, 0, 0.64278734, 0.7660447, 0, -0.7660447, 0.64278734, 0, 650, 850)
-script = ExtResource("2_7qgns")
+[node name="camera_controller" type="Node2D" parent="." unique_id=1680195504]
+script = ExtResource("5_mapcamera")
 
-[node name="camera" type="Camera3D" parent="camera_controller" unique_id=1819768719]
-current = true
-fov = 65.0
-far = 10000.0
-
-[node name="sun_light" type="DirectionalLight3D" parent="." unique_id=806744711]
-transform = Transform3D(0.86602527, -0.38302252, 0.32139382, 0, 0.64278734, 0.7660447, -0.50000024, -0.66341406, 0.55667007, 0, 0, 0)
-light_energy = 1.5
+[node name="camera" type="Camera2D" parent="camera_controller" unique_id=1819768719]
+enabled = true
+zoom = Vector2(0.35, 0.35)

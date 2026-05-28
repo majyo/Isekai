@@ -1,29 +1,20 @@
-using System;
 using Godot;
 
 namespace Isekai.World;
 
-public sealed partial class WorldMapInputController : Node
+public sealed partial class WorldMapInputController : Node2D
 {
     [Export] public NodePath CameraPath { get; set; } = "../camera_controller/camera";
-
-    [Export(PropertyHint.Range, "256,20000,1")]
-    public float RaycastMaxDistance { get; set; } = 12000.0f;
-
-    [Export(PropertyHint.Range, "4,256,1")]
-    public float RaycastStepDistance { get; set; } = 48.0f;
-
-    [Export(PropertyHint.Range, "1,16,1")]
-    public int RaycastRefineIterations { get; set; } = 8;
-
     [Export] public Key ToggleHexOverlayKey { get; set; } = Key.G;
+    [Export] public Key ToggleMapModeKey { get; set; } = Key.Tab;
 
     private WorldMapConfig _config;
     private TerrainInfoMap _infoMap;
     private HexTileMap _tileMap;
     private HexOverlayRenderer _overlayRenderer;
-    private Camera3D _camera;
+    private Camera2D _camera;
     private TileInspectorPanel _inspectorPanel;
+    private HexMapMode _currentMapMode = HexMapMode.Terrain;
     private int _hoveredTileIndex = -1;
     private int _selectedTileIndex = -1;
 
@@ -35,7 +26,8 @@ public sealed partial class WorldMapInputController : Node
         _infoMap = infoMap;
         _tileMap = tileMap;
         _overlayRenderer = overlayRenderer;
-        _camera = GetNodeOrNull<Camera3D>(CameraPath) ?? GetViewport().GetCamera3D();
+        _currentMapMode = overlayRenderer?.InitialMapMode ?? HexMapMode.Terrain;
+        _camera = GetNodeOrNull<Camera2D>(CameraPath) ?? GetViewport().GetCamera2D();
 
         _inspectorPanel ??= new TileInspectorPanel();
 
@@ -45,23 +37,31 @@ public sealed partial class WorldMapInputController : Node
         }
 
         _inspectorPanel.ShowEmpty();
-
-        WorldMapDebugLogger.LogSystem("World map input controller initialized.");
+        WorldMapDebugLogger.LogSystem("2D world map input controller initialized.");
     }
 
     public override void _Ready()
     {
-        _camera = GetNodeOrNull<Camera3D>(CameraPath) ?? GetViewport().GetCamera3D();
+        _camera = GetNodeOrNull<Camera2D>(CameraPath) ?? GetViewport().GetCamera2D();
     }
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (@event is InputEventKey { Pressed: true, Echo: false } keyEvent
-            && keyEvent.Keycode == ToggleHexOverlayKey)
+        if (@event is InputEventKey { Pressed: true, Echo: false } keyEvent)
         {
-            _overlayRenderer?.ToggleHexOverlayVisible();
-            GetViewport().SetInputAsHandled();
-            return;
+            if (keyEvent.Keycode == ToggleHexOverlayKey)
+            {
+                _overlayRenderer?.ToggleHexOverlayVisible();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
+            if (keyEvent.Keycode == ToggleMapModeKey)
+            {
+                ToggleMapMode();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
         }
 
         if (_tileMap == null || _hoveredTileIndex < 0)
@@ -85,39 +85,20 @@ public sealed partial class WorldMapInputController : Node
             return;
         }
 
-        if (Input.MouseMode == Input.MouseModeEnum.Captured)
-        {
-            ClearHover();
-            return;
-        }
-
         UpdateHoverFromMouse();
     }
 
     private void UpdateHoverFromMouse()
     {
-        if (_camera == null)
-        {
-            _camera = GetNodeOrNull<Camera3D>(CameraPath) ?? GetViewport().GetCamera3D();
-        }
+        var mapWorldPosition = GetGlobalMousePosition();
 
-        if (_camera == null)
+        if (!IsWithinWorld(mapWorldPosition))
         {
             ClearHover();
             return;
         }
 
-        var mousePosition = GetViewport().GetMousePosition();
-        var rayOrigin = _camera.ProjectRayOrigin(mousePosition);
-        var rayDirection = _camera.ProjectRayNormal(mousePosition).Normalized();
-
-        if (!TrySampleTerrainHit(rayOrigin, rayDirection, out var hitWorldXz))
-        {
-            ClearHover();
-            return;
-        }
-
-        var axial = WorldMapCoordinateUtility.WorldXzToAxial(hitWorldXz, _config);
+        var axial = WorldMapCoordinateUtility.WorldXzToAxial(mapWorldPosition, _config);
 
         if (!_tileMap.TryGetTileIndex(axial, out var tileIndex))
         {
@@ -134,66 +115,13 @@ public sealed partial class WorldMapInputController : Node
         _overlayRenderer.SetHoveredTile(tileIndex);
     }
 
-    private bool TrySampleTerrainHit(Vector3 rayOrigin, Vector3 rayDirection, out Vector2 hitWorldXz)
-    {
-        var previousDistance = 0.0f;
-        var previousDelta = GetHeightDelta(rayOrigin);
-
-        for (var distance = RaycastStepDistance; distance <= RaycastMaxDistance; distance += RaycastStepDistance)
-        {
-            var point = rayOrigin + rayDirection * distance;
-            var delta = GetHeightDelta(point);
-
-            if (delta <= 0.0f && previousDelta >= 0.0f)
-            {
-                var hitDistance = RefineTerrainHit(rayOrigin, rayDirection, previousDistance, distance);
-                var hit = rayOrigin + rayDirection * hitDistance;
-                hitWorldXz = WorldMapCoordinateUtility.WorldPositionToWorldXz(hit);
-                return IsWithinWorld(hitWorldXz);
-            }
-
-            previousDistance = distance;
-            previousDelta = delta;
-        }
-
-        hitWorldXz = Vector2.Zero;
-        return false;
-    }
-
-    private float RefineTerrainHit(Vector3 rayOrigin, Vector3 rayDirection, float nearDistance, float farDistance)
-    {
-        for (var iteration = 0; iteration < RaycastRefineIterations; iteration++)
-        {
-            var midDistance = (nearDistance + farDistance) * 0.5f;
-            var midPoint = rayOrigin + rayDirection * midDistance;
-
-            if (GetHeightDelta(midPoint) > 0.0f)
-            {
-                nearDistance = midDistance;
-            }
-            else
-            {
-                farDistance = midDistance;
-            }
-        }
-
-        return farDistance;
-    }
-
-    private float GetHeightDelta(Vector3 worldPosition)
-    {
-        var worldXz = WorldMapCoordinateUtility.WorldPositionToWorldXz(worldPosition);
-        var terrainHeight = _infoMap.SampleHeightUv(WorldMapCoordinateUtility.WorldXzToUv(worldXz, _config));
-        return worldPosition.Y - terrainHeight;
-    }
-
-    private bool IsWithinWorld(Vector2 worldXz)
+    private bool IsWithinWorld(Vector2 worldPosition)
     {
         var halfSize = _config.WorldSize * 0.5f;
-        return worldXz.X >= -halfSize.X
-            && worldXz.X <= halfSize.X
-            && worldXz.Y >= -halfSize.Y
-            && worldXz.Y <= halfSize.Y;
+        return worldPosition.X >= -halfSize.X
+            && worldPosition.X <= halfSize.X
+            && worldPosition.Y >= -halfSize.Y
+            && worldPosition.Y <= halfSize.Y;
     }
 
     private void SelectTile(int tileIndex)
@@ -201,6 +129,16 @@ public sealed partial class WorldMapInputController : Node
         _selectedTileIndex = tileIndex;
         _overlayRenderer.SetSelectedTile(tileIndex);
         _inspectorPanel?.ShowTile(_tileMap.GetTile(tileIndex), _tileMap);
+    }
+
+    private void ToggleMapMode()
+    {
+        _currentMapMode = _currentMapMode == HexMapMode.Terrain
+            ? HexMapMode.Political
+            : HexMapMode.Terrain;
+
+        _overlayRenderer?.SetMapMode(_currentMapMode);
+        WorldMapDebugLogger.LogSystem($"Map mode switched to {_currentMapMode}.");
     }
 
     private void ClearHover()
@@ -297,7 +235,7 @@ public sealed partial class WorldMapInputController : Node
                 $"Owner: {tile.OwnerId}\n" +
                 $"Region: {tile.RegionId}\n" +
                 $"Rivers: {tile.RiverEdgeCount}\n" +
-                $"World XZ: {tile.WorldCenterXz.X:0.0}, {tile.WorldCenterXz.Y:0.0}";
+                $"World XY: {tile.WorldCenterXz.X:0.0}, {tile.WorldCenterXz.Y:0.0}";
         }
 
         private static string FormatBool(bool value)

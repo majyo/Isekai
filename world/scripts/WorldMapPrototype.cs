@@ -5,15 +5,15 @@ using Godot;
 
 namespace Isekai.World;
 
-public sealed partial class WorldMapPrototype : Node3D
+public sealed partial class WorldMapPrototype : Node2D
 {
 	[Export] public string ConfigPath { get; set; } = WorldMapConfig.DefaultResourcePath;
 	[Export] public bool ValidateCoordinatesOnReady { get; set; } = true;
 	[Export] public string CoordinateValidationReportPath { get; set; } = WorldMapCoordinateValidator.DefaultReportPath;
 	[Export] public bool GenerateTerrainInfoOnReady { get; set; } = true;
-	[Export] public bool BakeVisualTerrainOnReady { get; set; } = true;
 	[Export] public bool BakeHexTilesOnReady { get; set; } = true;
 	[Export] public bool BakeRiverEdgesOnReady { get; set; } = true;
+	[Export] public bool RenderVisualTerrainOnReady { get; set; } = true;
 	[Export] public bool RenderHexOverlayOnReady { get; set; } = true;
 	[Export] public bool ValidateMvpPipelineOnReady { get; set; } = true;
 	[Export] public bool ExportTerrainQualityOnReady { get; set; } = true;
@@ -23,12 +23,13 @@ public sealed partial class WorldMapPrototype : Node3D
 	[Export] public string HexTileTerrainDebugPath { get; set; } = HexTileDebugExporter.DefaultTerrainPath;
 	[Export] public string HexRiverEdgeBakeReportPath { get; set; } = HexRiverEdgeBaker.DefaultBakeReportPath;
 	[Export] public string HexRiverEdgeDebugPath { get; set; } = HexRiverEdgeDebugExporter.DefaultDebugPath;
+	[Export] public string TileMapTerrainRenderReportPath { get; set; } = HexTileTerrainRenderer.DefaultRenderReportPath;
 	[Export] public string MvpValidationReportPath { get; set; } = WorldMapMvpValidator.DefaultReportPath;
 	[Export] public string TerrainQualityReportPath { get; set; } = TerrainGenerationQualityReporter.DefaultQualityReportPath;
 	[Export] public string TerrainMetricsJsonPath { get; set; } = TerrainGenerationQualityReporter.DefaultMetricsJsonPath;
 	[Export] public string HeightHistogramDebugPath { get; set; } = TerrainGenerationQualityReporter.DefaultHeightHistogramPath;
 	[Export] public string DebugOutputDirectory { get; set; } = TerrainInfoMapDebugExporter.DefaultOutputDirectory;
-	[Export] public NodePath TerrainRootPath { get; set; } = "terrain_root";
+	[Export] public NodePath TerrainTileMapPath { get; set; } = "terrain_tilemap";
 	[Export] public NodePath HexOverlayRendererPath { get; set; } = "hex_overlay";
 	[Export] public NodePath InputControllerPath { get; set; } = "world_map_input";
 
@@ -55,7 +56,7 @@ public sealed partial class WorldMapPrototype : Node3D
 		}
 
 		WorldMapDebugLogger.LogSystem($"Loaded config from '{ConfigPath}'.");
-		WorldMapDebugLogger.LogGenerationStep("Phase 0 ready.", Config);
+		WorldMapDebugLogger.LogGenerationStep("2D world map pipeline ready.", Config);
 		_pipelineTimingsMs.Clear();
 
 		if (ValidateCoordinatesOnReady)
@@ -68,11 +69,6 @@ public sealed partial class WorldMapPrototype : Node3D
 			RunTimedStage("terrain_info_generation", GenerateTerrainInfoMap);
 		}
 
-		if (BakeVisualTerrainOnReady && TerrainInfoMap != null)
-		{
-			RunTimedStage("visual_terrain_bake", BakeVisualTerrain);
-		}
-
 		if (BakeHexTilesOnReady && TerrainInfoMap != null)
 		{
 			RunTimedStage("hex_tile_bake", BakeHexTiles);
@@ -81,6 +77,11 @@ public sealed partial class WorldMapPrototype : Node3D
 		if (BakeRiverEdgesOnReady && TerrainInfoMap != null && HexTileMap != null)
 		{
 			RunTimedStage("hex_river_edge_bake", BakeRiverEdges);
+		}
+
+		if (RenderVisualTerrainOnReady && TerrainInfoMap != null && HexTileMap != null)
+		{
+			RunTimedStage("tilemap_terrain_render", RenderVisualTerrain);
 		}
 
 		if (RenderHexOverlayOnReady && TerrainInfoMap != null && HexTileMap != null)
@@ -110,9 +111,9 @@ public sealed partial class WorldMapPrototype : Node3D
 		_pipelineTimingsMs.Clear();
 		RunTimedStage("coordinate_validation", ValidateCoordinateSystem);
 		RunTimedStage("terrain_info_generation", GenerateTerrainInfoMap);
-		RunTimedStage("visual_terrain_bake", BakeVisualTerrain);
 		RunTimedStage("hex_tile_bake", BakeHexTiles);
 		RunTimedStage("hex_river_edge_bake", BakeRiverEdges);
+		RunTimedStage("tilemap_terrain_render", RenderVisualTerrain);
 		RunTimedStage("hex_overlay_render", RenderHexOverlay);
 		RunTimedStage("terrain_quality_export", ExportTerrainGenerationQualityReport);
 		RunTimedStage("mvp_validation", ValidateMvpPipeline);
@@ -153,21 +154,6 @@ public sealed partial class WorldMapPrototype : Node3D
 
 		TerrainInfoMapDebugExporter.ExportAll(TerrainInfoMap, DebugOutputDirectory);
 		WorldMapDebugLogger.LogGenerationStep($"Exported terrain information debug maps to '{DebugOutputDirectory}'.", Config);
-	}
-
-	private void BakeVisualTerrain()
-	{
-		var terrainRoot = GetNodeOrNull<Node3D>(TerrainRootPath);
-
-		if (terrainRoot == null)
-		{
-			WorldMapDebugLogger.Warn($"Could not find terrain root at '{TerrainRootPath}'.");
-			return;
-		}
-
-		WorldMapDebugLogger.LogBakeStep("Baking visual terrain.", Config);
-		var baker = new Terrain3DBaker();
-		baker.Bake(TerrainInfoMap, Config, terrainRoot);
 	}
 
 	private void BakeHexTiles()
@@ -214,6 +200,19 @@ public sealed partial class WorldMapPrototype : Node3D
 		WorldMapDebugLogger.LogBakeStep($"Exported hex river edge debug map to '{HexRiverEdgeDebugPath}'.", Config);
 	}
 
+	private void RenderVisualTerrain()
+	{
+		var renderer = GetNodeOrNull<HexTileTerrainRenderer>(TerrainTileMapPath);
+
+		if (renderer == null)
+		{
+			WorldMapDebugLogger.Warn($"Could not find TileMap terrain renderer at '{TerrainTileMapPath}'.");
+			return;
+		}
+
+		renderer.Render(TerrainInfoMap, HexTileMap, Config, TileMapTerrainRenderReportPath);
+	}
+
 	private void RenderHexOverlay()
 	{
 		var renderer = GetNodeOrNull<HexOverlayRenderer>(HexOverlayRendererPath);
@@ -257,10 +256,10 @@ public sealed partial class WorldMapPrototype : Node3D
 
 	private void ValidateMvpPipeline()
 	{
-		var terrainRoot = GetNodeOrNull<Node3D>(TerrainRootPath);
-		var renderer = GetNodeOrNull<HexOverlayRenderer>(HexOverlayRendererPath);
+		var terrainRenderer = GetNodeOrNull<HexTileTerrainRenderer>(TerrainTileMapPath);
+		var overlayRenderer = GetNodeOrNull<HexOverlayRenderer>(HexOverlayRendererPath);
 		var inputController = GetNodeOrNull<WorldMapInputController>(InputControllerPath);
-		var isValid = WorldMapMvpValidator.Validate(Config, TerrainInfoMap, HexTileMap, terrainRoot, renderer, inputController, out var report);
+		var isValid = WorldMapMvpValidator.Validate(Config, TerrainInfoMap, HexTileMap, terrainRenderer, overlayRenderer, inputController, out var report);
 		WorldMapMvpValidator.SaveReport(report, MvpValidationReportPath);
 
 		if (isValid)

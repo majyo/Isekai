@@ -24,10 +24,6 @@ window/size/viewport_height=1080
 
 project/assembly_name="Isekai"
 
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/terrain_3d/plugin.cfg")
-
 [physics]
 
 3d/physics_engine="Jolt Physics"

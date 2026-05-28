@@ -10,21 +10,17 @@ public static class WorldMapMvpValidator
     public const string DefaultReportPath = "res://world/generated/world_map_mvp_validation_report.txt";
 
     private const float HeightTolerance = 0.0001f;
-    private const float Terrain3DHeightTolerance = 8.0f;
-    private const string Terrain3DClassName = "Terrain3D";
-    private const int ExpectedTerrain3DTextureCount = 10;
 
     public static bool Validate(
         WorldMapConfig config,
         TerrainInfoMap infoMap,
         HexTileMap tileMap,
-        Node3D terrainRoot,
+        HexTileTerrainRenderer terrainRenderer,
         HexOverlayRenderer overlayRenderer,
         WorldMapInputController inputController,
         out string report)
     {
         var checks = new List<ValidationCheck>();
-        var visualTerrain = InspectVisualTerrain(config, terrainRoot);
 
         AddCheck(checks, "Config is valid", config != null && config.IsValid(out _));
         AddCheck(checks, "Coordinate round trips pass", WorldMapCoordinateValidator.Validate(config, out _));
@@ -35,16 +31,15 @@ public static class WorldMapMvpValidator
         AddCheck(checks, "Terrain classification has playable variety", ValidateTerrainVariety(tileMap, out var varietyDetail), varietyDetail);
         AddCheck(checks, "Coast detection produced coastal tiles", CountTiles(tileMap, static (map, index) => map.IsCoastal[index] != 0) > 0);
         AddCheck(checks, "River edge data is present and bidirectionally consistent", ValidateRiverEdges(tileMap, out var riverDetail), riverDetail);
-        AddCheck(checks, "Visual terrain exists for selected mode", visualTerrain.IsValid, visualTerrain.Detail);
-        AddCheck(checks, "Terrain3D texture assets are configured", ValidateTerrain3DTextureAssets(visualTerrain, out var textureAssetDetail), textureAssetDetail);
-        AddCheck(checks, "Terrain3D control map has texture id variety", ValidateTerrain3DControlTextureIds(config, visualTerrain, out var controlTextureDetail), controlTextureDetail);
-        AddCheck(checks, "Terrain3D height samples match TerrainInfoMap", ValidateTerrain3DHeightConsistency(config, infoMap, visualTerrain, out var terrain3DHeightDetail), terrain3DHeightDetail);
+        AddCheck(checks, "2D TileMap terrain rendered all tiles", ValidateTileMapTerrainRenderer(tileMap, terrainRenderer, out var terrainRenderDetail), terrainRenderDetail);
+        AddCheck(checks, "2D TileMap cell centers align with HexTileMap", ValidateTileMapAlignment(tileMap, terrainRenderer, out var tileMapAlignmentDetail), tileMapAlignmentDetail);
+        AddCheck(checks, "Terrain atlas mapping covers every TerrainKind", HexTileTerrainRenderer.HasCompleteTerrainAtlasMapping());
         AddCheck(checks, "Hex overlay rendered all tiles", overlayRenderer != null && overlayRenderer.LastRenderedTileCount == tileMap.TileCount, overlayRenderer == null ? "overlay renderer missing" : $"rendered={overlayRenderer.LastRenderedTileCount}, expected={tileMap.TileCount}");
-        AddCheck(checks, "Hex overlay has grid and map mode meshes", overlayRenderer != null && overlayRenderer.HasRenderedGrid && overlayRenderer.HasTerrainMapMode && overlayRenderer.HasPoliticalMapMode);
-        AddCheck(checks, "Hover and selection highlight meshes exist", overlayRenderer != null && overlayRenderer.HasHighlightMeshes);
+        AddCheck(checks, "Hex overlay has grid and map mode layers", overlayRenderer != null && overlayRenderer.HasRenderedGrid && overlayRenderer.HasTerrainMapMode && overlayRenderer.HasPoliticalMapMode);
+        AddCheck(checks, "Hover and selection highlight layers exist", overlayRenderer != null && overlayRenderer.HasHighlightMeshes);
         AddCheck(checks, "World map input controller is initialized", inputController != null && inputController.IsInitialized);
         AddCheck(checks, "Political overlay has owner ids", CountTiles(tileMap, static (map, index) => map.OwnerId[index] > 0) > 0);
-        AddCheck(checks, "Gameplay data does not depend on Terrain3D mesh", true, "tile bake, input raycast, and overlay height all sample TerrainInfoMap");
+        AddCheck(checks, "Gameplay data does not depend on visual TileMap", true, "tile bake, input lookup, and overlay draw use TerrainInfoMap/HexTileMap data");
 
         var failedCount = 0;
         var builder = new StringBuilder();
@@ -52,9 +47,8 @@ public static class WorldMapMvpValidator
         builder.AppendLine($"Seed: {config?.Seed}");
         builder.AppendLine($"InfoMapSize: {config?.InfoMapSize}");
         builder.AppendLine($"TargetHexGridSize: {config?.TargetHexGridSize}");
-        builder.AppendLine($"RequestedVisualTerrainMode: {config?.VisualTerrainMode}");
-        builder.AppendLine($"DetectedVisualTerrainMode: {visualTerrain.DetectedMode}");
-        builder.AppendLine($"Terrain3DPluginAvailable: {visualTerrain.PluginAvailable}");
+        builder.AppendLine("VisualTerrain: TileMap2D");
+        builder.AppendLine($"VisualTileSetPath: {config?.VisualTileSetPath}");
         builder.AppendLine($"HexRadius: {config?.HexRadius}");
         builder.AppendLine();
 
@@ -80,13 +74,11 @@ public static class WorldMapMvpValidator
         builder.AppendLine($"- Terrain quality report: {TerrainGenerationQualityReporter.DefaultQualityReportPath}");
         builder.AppendLine($"- Terrain metrics json: {TerrainGenerationQualityReporter.DefaultMetricsJsonPath}");
         builder.AppendLine($"- Height histogram debug image: {TerrainGenerationQualityReporter.DefaultHeightHistogramPath}");
+        builder.AppendLine($"- TileMap terrain render report: {HexTileTerrainRenderer.DefaultRenderReportPath}");
         builder.AppendLine();
         builder.AppendLine("Known limitations:");
-        builder.AppendLine(config?.VisualTerrainMode == VisualTerrainMode.Terrain3D
-            ? "- Terrain3D height, color, control, and generated texture assets are active; river edge visuals are still pending."
-            : "- ArrayMesh debug preview mode is selected; Terrain3D remains the default visual terrain path.");
+        builder.AppendLine("- 2D TileMap terrain uses generated placeholder hex art until final map art is available.");
         builder.AppendLine("- Generated files under res://world/generated/ are rebakable and intentionally ignored by Git.");
-        builder.AppendLine("- River edge gameplay data is baked, but visual river meshes are not yet drawn as edge geometry.");
         builder.AppendLine("- Province, resource, movement, and save/load systems are follow-up milestones.");
 
         report = builder.ToString();
@@ -109,6 +101,12 @@ public static class WorldMapMvpValidator
 
     private static bool ValidateTerrainInfoMap(WorldMapConfig config, TerrainInfoMap infoMap, out string detail)
     {
+        if (config == null)
+        {
+            detail = "config missing";
+            return false;
+        }
+
         if (infoMap == null)
         {
             detail = "terrain info map missing";
@@ -130,6 +128,12 @@ public static class WorldMapMvpValidator
 
     private static bool ValidateDeterminism(WorldMapConfig config, TerrainInfoMap infoMap, out string detail)
     {
+        if (config == null)
+        {
+            detail = "config missing";
+            return false;
+        }
+
         if (infoMap == null)
         {
             detail = "terrain info map missing";
@@ -165,6 +169,12 @@ public static class WorldMapMvpValidator
 
     private static bool ValidateTileMap(WorldMapConfig config, HexTileMap tileMap, out string detail)
     {
+        if (config == null)
+        {
+            detail = "config missing";
+            return false;
+        }
+
         if (tileMap == null)
         {
             detail = "tile map missing";
@@ -212,7 +222,7 @@ public static class WorldMapMvpValidator
     private static bool ValidateTerrainVariety(HexTileMap tileMap, out string detail)
     {
         var water = CountTiles(tileMap, static (map, index) => map.IsWater[index] != 0);
-        var land = tileMap.TileCount - water;
+        var land = tileMap == null ? 0 : tileMap.TileCount - water;
         var mountains = CountTiles(tileMap, static (map, index) => (TerrainKind)map.Terrain[index] == TerrainKind.Mountains);
         var forests = CountTiles(tileMap, static (map, index) => (TerrainKind)map.Terrain[index] == TerrainKind.Forest);
 
@@ -265,362 +275,84 @@ public static class WorldMapMvpValidator
         return sharedRiverEdges > 0 && inconsistentEdges == 0;
     }
 
-    private static VisualTerrainInspection InspectVisualTerrain(WorldMapConfig config, Node3D terrainRoot)
-    {
-        var pluginAvailable = ClassDB.ClassExists(Terrain3DClassName);
-
-        if (terrainRoot == null)
-        {
-            return new VisualTerrainInspection(
-                false,
-                DetectedVisualTerrainMode.Missing,
-                pluginAvailable,
-                null,
-                null,
-                0,
-                "terrain root missing");
-        }
-
-        var terrainNode = terrainRoot.GetNodeOrNull<Node>(Terrain3DBaker.Terrain3DNodeName);
-        var hasTerrain3DNode = terrainNode != null && terrainNode.IsClass(Terrain3DClassName);
-        GodotObject terrainData = null;
-        var regionCount = 0;
-
-        if (hasTerrain3DNode)
-        {
-            terrainData = terrainNode.Call("get_data").AsGodotObject();
-            regionCount = terrainData?.Call("get_region_count").AsInt32() ?? 0;
-        }
-
-        if (config?.VisualTerrainMode == VisualTerrainMode.Terrain3D && pluginAvailable)
-        {
-            if (!hasTerrain3DNode)
-            {
-                return new VisualTerrainInspection(
-                    false,
-                    DetectedVisualTerrainMode.Missing,
-                    pluginAvailable,
-                    null,
-                    null,
-                    0,
-                    $"Terrain3D node '{Terrain3DBaker.Terrain3DNodeName}' missing");
-            }
-
-            if (terrainData == null)
-            {
-                return new VisualTerrainInspection(
-                    false,
-                    DetectedVisualTerrainMode.Terrain3D,
-                    pluginAvailable,
-                    terrainNode,
-                    null,
-                    0,
-                    $"mode=Terrain3D, node={terrainNode.Name}, data=missing");
-            }
-
-            return new VisualTerrainInspection(
-                regionCount > 0,
-                DetectedVisualTerrainMode.Terrain3D,
-                pluginAvailable,
-                terrainNode,
-                terrainData,
-                regionCount,
-                $"mode=Terrain3D, node={terrainNode.Name}, regions={regionCount}");
-        }
-
-        if (hasTerrain3DNode && terrainData != null && regionCount > 0)
-        {
-            return new VisualTerrainInspection(
-                true,
-                DetectedVisualTerrainMode.Terrain3D,
-                pluginAvailable,
-                terrainNode,
-                terrainData,
-                regionCount,
-                $"mode=Terrain3D, node={terrainNode.Name}, regions={regionCount}");
-        }
-
-        var previewMesh = terrainRoot.GetNodeOrNull<MeshInstance3D>(Terrain3DBaker.TerrainPreviewNodeName)?.Mesh;
-
-        if (previewMesh != null)
-        {
-            return new VisualTerrainInspection(
-                true,
-                DetectedVisualTerrainMode.ArrayMeshDebugPreview,
-                pluginAvailable,
-                null,
-                null,
-                0,
-                "mode=ArrayMeshDebugPreview");
-        }
-
-        return new VisualTerrainInspection(
-            false,
-            DetectedVisualTerrainMode.Missing,
-            pluginAvailable,
-            null,
-            null,
-            0,
-            "visual terrain node missing");
-    }
-
-    private static bool ValidateTerrain3DHeightConsistency(
-        WorldMapConfig config,
-        TerrainInfoMap infoMap,
-        VisualTerrainInspection visualTerrain,
+    private static bool ValidateTileMapTerrainRenderer(
+        HexTileMap tileMap,
+        HexTileTerrainRenderer terrainRenderer,
         out string detail)
     {
-        if (visualTerrain.DetectedMode != DetectedVisualTerrainMode.Terrain3D)
+        if (tileMap == null)
         {
-            detail = $"skipped: detected_mode={visualTerrain.DetectedMode}";
-            return true;
-        }
-
-        if (config == null)
-        {
-            detail = "config missing";
+            detail = "tile map missing";
             return false;
         }
 
-        if (infoMap == null)
+        if (terrainRenderer == null)
         {
-            detail = "terrain info map missing";
+            detail = "terrain TileMapLayer missing";
             return false;
         }
 
-        if (visualTerrain.TerrainData == null)
+        var usedCells = terrainRenderer.GetUsedCells().Count;
+        var tileSet = terrainRenderer.TileSet;
+        var isHexTileSet = tileSet != null && tileSet.TileShape == TileSet.TileShapeEnum.Hexagon;
+        detail = $"rendered={terrainRenderer.LastRenderedTileCount}, used_cells={usedCells}, expected={tileMap.TileCount}, missing={terrainRenderer.MissingTileCount}, hex_tileset={isHexTileSet}, detail={terrainRenderer.LastRenderDetail}";
+
+        return terrainRenderer.TileSetReady
+            && isHexTileSet
+            && terrainRenderer.LastRenderedTileCount == tileMap.TileCount
+            && usedCells == tileMap.TileCount
+            && terrainRenderer.MissingTileCount == 0;
+    }
+
+    private static bool ValidateTileMapAlignment(
+        HexTileMap tileMap,
+        HexTileTerrainRenderer terrainRenderer,
+        out string detail)
+    {
+        if (tileMap == null)
         {
-            detail = "Terrain3D data missing";
+            detail = "tile map missing";
             return false;
         }
 
-        var sampleUvs = new[]
+        if (terrainRenderer == null)
         {
-            new Vector2(0.001f, 0.001f),
-            new Vector2(0.999f, 0.001f),
-            new Vector2(0.001f, 0.999f),
-            new Vector2(0.999f, 0.999f),
-            new Vector2(0.5f, 0.5f),
-            new Vector2(1.0f / 3.0f, 2.0f / 3.0f),
-            new Vector2(0.875f, 0.2f)
+            detail = "terrain TileMapLayer missing";
+            return false;
+        }
+
+        var samples = new[]
+        {
+            0,
+            Math.Min(1, tileMap.TileCount - 1),
+            Math.Min(tileMap.GridSize.X, tileMap.TileCount - 1),
+            tileMap.TileCount / 2,
+            tileMap.TileCount - 1
         };
 
         var maxError = 0.0f;
-        var worstUv = Vector2.Zero;
-        var worstExpected = 0.0f;
-        var worstActual = 0.0f;
+        var worstIndex = 0;
+        var worstExpected = Vector2.Zero;
+        var worstActual = Vector2.Zero;
 
-        foreach (var uv in sampleUvs)
+        foreach (var tileIndex in samples)
         {
-            var worldXz = WorldMapCoordinateUtility.UvToWorldXz(uv, config);
-            var worldPosition = WorldMapCoordinateUtility.WorldXzToWorldPosition(worldXz);
-            var expectedHeight = infoMap.SampleHeightUv(uv);
-            var actualHeight = visualTerrain.TerrainData.Call("get_height", Variant.From(worldPosition)).AsSingle();
-
-            if (!float.IsFinite(actualHeight))
-            {
-                detail = $"non-finite Terrain3D height at uv={uv}, world_xz={worldXz}";
-                return false;
-            }
-
-            var error = MathF.Abs(actualHeight - expectedHeight);
+            var cell = new Vector2I(tileIndex % tileMap.GridSize.X, tileIndex / tileMap.GridSize.X);
+            var expected = new Vector2(tileMap.WorldCenterX[tileIndex], tileMap.WorldCenterZ[tileIndex]);
+            var actual = terrainRenderer.ToGlobal(terrainRenderer.MapToLocal(cell));
+            var error = expected.DistanceTo(actual);
 
             if (error > maxError)
             {
                 maxError = error;
-                worstUv = uv;
-                worstExpected = expectedHeight;
-                worstActual = actualHeight;
+                worstIndex = tileIndex;
+                worstExpected = expected;
+                worstActual = actual;
             }
         }
 
-        detail = $"checked_samples={sampleUvs.Length}, max_error={maxError:0.###}, tolerance={Terrain3DHeightTolerance:0.###}, worst_uv={worstUv}, expected={worstExpected:0.###}, terrain3d={worstActual:0.###}";
-        return maxError <= Terrain3DHeightTolerance;
-    }
-
-    private static bool ValidateTerrain3DTextureAssets(VisualTerrainInspection visualTerrain, out string detail)
-    {
-        if (visualTerrain.DetectedMode != DetectedVisualTerrainMode.Terrain3D)
-        {
-            detail = $"skipped: detected_mode={visualTerrain.DetectedMode}";
-            return true;
-        }
-
-        if (visualTerrain.TerrainNode == null)
-        {
-            detail = "Terrain3D node missing";
-            return false;
-        }
-
-        var assets = TryGetGodotObject(visualTerrain.TerrainNode, "assets");
-        assets ??= TryCallGodotObject(visualTerrain.TerrainNode, "get_assets");
-
-        if (assets == null)
-        {
-            detail = "Terrain3D assets resource missing";
-            return false;
-        }
-
-        var textureCount = 0;
-
-        for (var id = 0; id < ExpectedTerrain3DTextureCount; id++)
-        {
-            if (TryCallGodotObject(assets, "get_texture", Variant.From(id)) != null)
-            {
-                textureCount++;
-            }
-        }
-
-        var material = TryGetGodotObject(visualTerrain.TerrainNode, "material");
-        var texturingEnabled = TryGetMaterialBool(material, "enable_texturing", false);
-        var colormapEnabled = TryGetBool(material, "show_colormap", false);
-        var albedoArrayValid = TryCallRidValid(assets, "get_albedo_array_rid");
-        var normalArrayValid = TryCallRidValid(assets, "get_normal_array_rid");
-
-        detail = $"textures={textureCount}, expected={ExpectedTerrain3DTextureCount}, enable_texturing={texturingEnabled}, show_colormap={colormapEnabled}, albedo_array={albedoArrayValid}, normal_array={normalArrayValid}";
-        return textureCount == ExpectedTerrain3DTextureCount && texturingEnabled && colormapEnabled && albedoArrayValid && normalArrayValid;
-    }
-
-    private static bool ValidateTerrain3DControlTextureIds(
-        WorldMapConfig config,
-        VisualTerrainInspection visualTerrain,
-        out string detail)
-    {
-        if (visualTerrain.DetectedMode != DetectedVisualTerrainMode.Terrain3D)
-        {
-            detail = $"skipped: detected_mode={visualTerrain.DetectedMode}";
-            return true;
-        }
-
-        if (config == null)
-        {
-            detail = "config missing";
-            return false;
-        }
-
-        if (visualTerrain.TerrainData == null)
-        {
-            detail = "Terrain3D data missing";
-            return false;
-        }
-
-        var distinctIds = new HashSet<int>();
-        var invalidIds = 0;
-
-        for (var y = 1; y <= 5; y++)
-        {
-            for (var x = 1; x <= 5; x++)
-            {
-                var uv = new Vector2(x / 6.0f, y / 6.0f);
-                var worldXz = WorldMapCoordinateUtility.UvToWorldXz(uv, config);
-                var worldPosition = WorldMapCoordinateUtility.WorldXzToWorldPosition(worldXz);
-                var textureId = visualTerrain.TerrainData.Call("get_control_base_id", Variant.From(worldPosition)).AsInt32();
-
-                if (textureId < 0 || textureId >= ExpectedTerrain3DTextureCount)
-                {
-                    invalidIds++;
-                    continue;
-                }
-
-                distinctIds.Add(textureId);
-            }
-        }
-
-        detail = $"distinct_texture_ids={string.Join(",", distinctIds)}, distinct_count={distinctIds.Count}, invalid_ids={invalidIds}";
-        return invalidIds == 0 && distinctIds.Count >= 3;
-    }
-
-    private static GodotObject TryGetGodotObject(GodotObject target, string property)
-    {
-        if (target == null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return target.Get(property).AsGodotObject();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static GodotObject TryCallGodotObject(GodotObject target, string method, params Variant[] arguments)
-    {
-        if (target == null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return target.Call(method, arguments).AsGodotObject();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static bool TryGetMaterialBool(GodotObject target, string property, bool fallback)
-    {
-        if (target == null)
-        {
-            return fallback;
-        }
-
-        try
-        {
-            var parameters = target.Get("_shader_parameters").AsGodotDictionary();
-
-            if (parameters.ContainsKey(property))
-            {
-                return parameters[property].AsBool();
-            }
-        }
-        catch
-        {
-            // Older Terrain3D builds may expose shader options as direct properties.
-        }
-
-        return TryGetBool(target, property, fallback);
-    }
-
-    private static bool TryCallRidValid(GodotObject target, string method)
-    {
-        if (target == null)
-        {
-            return false;
-        }
-
-        try
-        {
-            var rid = target.Call(method).AsRid();
-            return rid.IsValid;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryGetBool(GodotObject target, string property, bool fallback)
-    {
-        if (target == null)
-        {
-            return fallback;
-        }
-
-        try
-        {
-            return target.Get(property).AsBool();
-        }
-        catch
-        {
-            return fallback;
-        }
+        detail = $"checked_samples={samples.Length}, max_error={maxError:0.###}, worst_index={worstIndex}, expected={worstExpected}, actual={worstActual}";
+        return maxError <= 1.0f;
     }
 
     private static int CountTiles(HexTileMap tileMap, TilePredicate predicate)
@@ -649,22 +381,6 @@ public static class WorldMapMvpValidator
     }
 
     private delegate bool TilePredicate(HexTileMap tileMap, int index);
-
-    private enum DetectedVisualTerrainMode
-    {
-        Missing = 0,
-        ArrayMeshDebugPreview = 1,
-        Terrain3D = 2
-    }
-
-    private readonly record struct VisualTerrainInspection(
-        bool IsValid,
-        DetectedVisualTerrainMode DetectedMode,
-        bool PluginAvailable,
-        Node TerrainNode,
-        GodotObject TerrainData,
-        int RegionCount,
-        string Detail);
 
     private readonly record struct ValidationCheck(string Name, bool Passed, string Detail);
 }
