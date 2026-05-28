@@ -1,4 +1,5 @@
 using Godot;
+using System;
 
 namespace Isekai.World;
 
@@ -30,11 +31,15 @@ public sealed partial class HexOverlayRenderer : Node2D
     private bool _isHexOverlayVisible = true;
     private int _hoveredTileIndex = -1;
     private int _selectedTileIndex = -1;
+    private MeshInstance2D _gridMeshInstance;
+    private MeshInstance2D _terrainModeMeshInstance;
+    private MeshInstance2D _politicalModeMeshInstance;
+    private MeshInstance2D _riverMeshInstance;
 
     public int LastRenderedTileCount { get; private set; }
-    public bool HasRenderedGrid => LastRenderedTileCount > 0;
-    public bool HasTerrainMapMode => LastRenderedTileCount > 0;
-    public bool HasPoliticalMapMode => LastRenderedTileCount > 0;
+    public bool HasRenderedGrid => _gridMeshInstance?.Mesh != null;
+    public bool HasTerrainMapMode => _terrainModeMeshInstance?.Mesh != null;
+    public bool HasPoliticalMapMode => _politicalModeMeshInstance?.Mesh != null;
     public bool HasHighlightMeshes => LastRenderedTileCount > 0;
     public bool IsHexOverlayVisible => _isHexOverlayVisible;
 
@@ -48,6 +53,26 @@ public sealed partial class HexOverlayRenderer : Node2D
         _hoveredTileIndex = -1;
         _selectedTileIndex = -1;
         LastRenderedTileCount = tileMap?.TileCount ?? 0;
+        _gridMeshInstance = null;
+        _terrainModeMeshInstance = null;
+        _politicalModeMeshInstance = null;
+        _riverMeshInstance = null;
+        ClearChildren(this);
+
+        if (_tileMap != null && _config != null)
+        {
+            _terrainModeMeshInstance = BuildMapModeMeshInstance("terrain_mode_overlay", HexMapMode.Terrain);
+            _politicalModeMeshInstance = BuildMapModeMeshInstance("political_mode_overlay", HexMapMode.Political);
+            _riverMeshInstance = BuildRiverMeshInstance();
+            _gridMeshInstance = BuildGridMeshInstance();
+
+            AddChild(_terrainModeMeshInstance);
+            AddChild(_politicalModeMeshInstance);
+            AddChild(_riverMeshInstance);
+            AddChild(_gridMeshInstance);
+        }
+
+        ApplyOverlayVisibility();
         QueueRedraw();
         WorldMapDebugLogger.LogSystem($"Rendered 2D hex overlay for {LastRenderedTileCount} tiles.");
     }
@@ -55,6 +80,7 @@ public sealed partial class HexOverlayRenderer : Node2D
     public void SetMapMode(HexMapMode mapMode)
     {
         _currentMapMode = mapMode;
+        ApplyOverlayVisibility();
         QueueRedraw();
     }
 
@@ -66,6 +92,7 @@ public sealed partial class HexOverlayRenderer : Node2D
         }
 
         _isHexOverlayVisible = visible;
+        ApplyOverlayVisibility();
         QueueRedraw();
         WorldMapDebugLogger.LogSystem($"Hex overlay {(visible ? "shown" : "hidden")}.");
     }
@@ -116,42 +143,98 @@ public sealed partial class HexOverlayRenderer : Node2D
             return;
         }
 
-        DrawMapModeFill();
-        DrawRiverEdges();
-        DrawGrid();
         DrawHighlight(_hoveredTileIndex, new Color(1.0f, 0.92f, 0.35f, HighlightAlpha));
         DrawHighlight(_selectedTileIndex, new Color(0.30f, 0.82f, 1.0f, HighlightAlpha));
     }
 
-    private void DrawMapModeFill()
+    private void ApplyOverlayVisibility()
     {
+        if (_terrainModeMeshInstance != null)
+        {
+            _terrainModeMeshInstance.Visible = _isHexOverlayVisible && _currentMapMode == HexMapMode.Terrain;
+        }
+
+        if (_politicalModeMeshInstance != null)
+        {
+            _politicalModeMeshInstance.Visible = _isHexOverlayVisible && _currentMapMode == HexMapMode.Political;
+        }
+
+        if (_riverMeshInstance != null)
+        {
+            _riverMeshInstance.Visible = _isHexOverlayVisible;
+        }
+
+        if (_gridMeshInstance != null)
+        {
+            _gridMeshInstance.Visible = _isHexOverlayVisible;
+        }
+    }
+
+    private MeshInstance2D BuildMapModeMeshInstance(string nodeName, HexMapMode mapMode)
+    {
+        var surfaceTool = new SurfaceTool();
+        surfaceTool.Begin(Mesh.PrimitiveType.Triangles);
+
         for (var tileIndex = 0; tileIndex < _tileMap.TileCount; tileIndex++)
         {
-            var color = _currentMapMode == HexMapMode.Political
+            var color = mapMode == HexMapMode.Political
                 ? GetPoliticalColor(_tileMap.OwnerId[tileIndex])
                 : GetTerrainColor((TerrainKind)_tileMap.Terrain[tileIndex]);
 
             color.A = FillAlpha;
-            DrawColoredPolygon(GetHexPolygon(tileIndex), color);
+            var center = new Vector2(_tileMap.WorldCenterX[tileIndex], _tileMap.WorldCenterZ[tileIndex]);
+            AddHexFill(surfaceTool, center, GetHexPolygon(tileIndex), color);
         }
+
+        return new MeshInstance2D
+        {
+            Name = nodeName,
+            Mesh = surfaceTool.Commit()
+        };
     }
 
-    private void DrawGrid()
+    private MeshInstance2D BuildGridMeshInstance()
     {
+        var surfaceTool = new SurfaceTool();
+        surfaceTool.Begin(Mesh.PrimitiveType.Triangles);
         var color = new Color(0.88f, 0.94f, 1.0f, GridAlpha);
 
         for (var tileIndex = 0; tileIndex < _tileMap.TileCount; tileIndex++)
         {
+            var axial = new Vector2I(_tileMap.Q[tileIndex], _tileMap.R[tileIndex]);
             var points = GetHexPolygon(tileIndex);
-            DrawPolyline([.. points, points[0]], color, GridWidth, true);
+
+            for (var direction = 0; direction < WorldMapCoordinateUtility.AxialNeighborDirections.Length; direction++)
+            {
+                var neighborAxial = axial + WorldMapCoordinateUtility.AxialNeighborDirections[direction];
+
+                if (_tileMap.TryGetTileIndex(neighborAxial, out var neighborIndex) && neighborIndex < tileIndex)
+                {
+                    continue;
+                }
+
+                var startCorner = GetRiverEdgeStartCorner(direction);
+                var endCorner = (startCorner + 1) % 6;
+                AddLineRibbon(surfaceTool, points[startCorner], points[endCorner], GridWidth, color);
+            }
         }
+
+        return new MeshInstance2D
+        {
+            Name = "hex_grid_mesh",
+            Mesh = surfaceTool.Commit()
+        };
     }
 
-    private void DrawRiverEdges()
+    private MeshInstance2D BuildRiverMeshInstance()
     {
+        var surfaceTool = new SurfaceTool();
+        surfaceTool.Begin(Mesh.PrimitiveType.Triangles);
+
         for (var tileIndex = 0; tileIndex < _tileMap.TileCount; tileIndex++)
         {
             var axial = new Vector2I(_tileMap.Q[tileIndex], _tileMap.R[tileIndex]);
+            var points = GetHexPolygon(tileIndex);
 
             for (var direction = 0; direction < WorldMapCoordinateUtility.AxialNeighborDirections.Length; direction++)
             {
@@ -169,7 +252,6 @@ public sealed partial class HexOverlayRenderer : Node2D
                     continue;
                 }
 
-                var points = GetHexPolygon(tileIndex);
                 var startCorner = GetRiverEdgeStartCorner(direction);
                 var endCorner = (startCorner + 1) % 6;
                 var color = edge.Kind == RiverKind.Major
@@ -177,9 +259,15 @@ public sealed partial class HexOverlayRenderer : Node2D
                     : new Color(0.18f, 0.58f, 0.82f, 0.74f);
                 var width = edge.Kind == RiverKind.Major ? RiverWidth * 1.35f : RiverWidth;
 
-                DrawLine(points[startCorner], points[endCorner], color, width, true);
+                AddLineRibbon(surfaceTool, points[startCorner], points[endCorner], width, color);
             }
         }
+
+        return new MeshInstance2D
+        {
+            Name = "river_edge_mesh",
+            Mesh = surfaceTool.Commit()
+        };
     }
 
     private void DrawHighlight(int tileIndex, Color color)
@@ -210,6 +298,45 @@ public sealed partial class HexOverlayRenderer : Node2D
     private static int GetRiverEdgeStartCorner(int direction)
     {
         return (direction + 5) % 6;
+    }
+
+    private static void AddHexFill(SurfaceTool surfaceTool, Vector2 center, Vector2[] points, Color color)
+    {
+        for (var corner = 0; corner < points.Length; corner++)
+        {
+            AddVertex(surfaceTool, center, color);
+            AddVertex(surfaceTool, points[corner], color);
+            AddVertex(surfaceTool, points[(corner + 1) % points.Length], color);
+        }
+    }
+
+    private static void AddLineRibbon(SurfaceTool surfaceTool, Vector2 start, Vector2 end, float width, Color color)
+    {
+        var direction = end - start;
+
+        if (direction.LengthSquared() <= 0.0001f)
+        {
+            return;
+        }
+
+        var normal = new Vector2(-direction.Y, direction.X).Normalized() * MathF.Max(0.01f, width * 0.5f);
+        var a = start + normal;
+        var b = end + normal;
+        var c = end - normal;
+        var d = start - normal;
+
+        AddVertex(surfaceTool, a, color);
+        AddVertex(surfaceTool, b, color);
+        AddVertex(surfaceTool, c, color);
+        AddVertex(surfaceTool, a, color);
+        AddVertex(surfaceTool, c, color);
+        AddVertex(surfaceTool, d, color);
+    }
+
+    private static void AddVertex(SurfaceTool surfaceTool, Vector2 position, Color color)
+    {
+        surfaceTool.SetColor(color);
+        surfaceTool.AddVertex(new Vector3(position.X, position.Y, 0.0f));
     }
 
     private static Color GetTerrainColor(TerrainKind terrain)
@@ -246,5 +373,14 @@ public sealed partial class HexOverlayRenderer : Node2D
         };
 
         return palette[(ownerId - 1) % palette.Length];
+    }
+
+    private static void ClearChildren(Node node)
+    {
+        foreach (var child in node.GetChildren())
+        {
+            node.RemoveChild(child);
+            child.QueueFree();
+        }
     }
 }
